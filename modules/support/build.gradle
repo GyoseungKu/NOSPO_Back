@@ -1,0 +1,7 @@
+plugins { id 'java-library' }
+dependencies {
+    api 'tools.jackson.core:jackson-databind'
+    implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+    implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+}

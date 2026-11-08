@@ -1,0 +1,6 @@
+plugins { id 'java-library' }
+dependencies {
+    api project(':member:contract')
+    implementation project(':member:domain')
+    implementation 'org.springframework:spring-context'
+}

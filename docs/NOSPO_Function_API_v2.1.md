@@ -1072,6 +1072,7 @@ termId는 같은 약관 종류의 안정적인 UUID. 새 약관이면 새 UUID �
 | HTTP | code | 의미·프론트 처리 |
 | --- | --- | --- |
 | 400 | INVALID_REQUEST / INVALID_CURSOR | 문법·커서 오류, 입력/커서 초기화 |
+| 400 | INVALID_VERIFICATION / INVALID_PROOF | 유효한 인증 링크 또는 증명을 제출하지 않음 |
 | 401 | AUTH_REQUIRED / TOKEN_EXPIRED / SESSION_REVOKED | 재발급 또는 로그인 |
 | 401 | INVALID_CREDENTIALS | 이메일/비밀번호를 구분하지 않고 로그인 실패 안내 |
 | 403 | FORBIDDEN / TERMS_RECONSENT_REQUIRED | 권한 부족 / 약관 화면 이동 |
@@ -1090,6 +1091,7 @@ termId는 같은 약관 종류의 안정적인 UUID. 새 약관이면 새 UUID �
 | 409 | CHALLENGE_ALREADY_VERIFIED | 이미 검증된 링크. 기존 유효 증명은 유지하며 재발급하지 않음 |
 | 409 | ALREADY_REFUNDED / TERM_ALREADY_EFFECTIVE | 중복 복구 / 시행된 약관 변경 금지 |
 | 410 | PROOF_EXPIRED / STREAM_REPLAY_EXPIRED | 증명 재발급 / 결과 조회 |
+| 410 | VERIFICATION_EXPIRED | 만료 또는 재발송으로 무효화된 링크. 인증 메일 재요청 |
 | 412 | VERSION_MISMATCH | 최신 ETag로 조회 후 사용자 변경 재적용 |
 | 413 | FILE_TOO_LARGE | 업로드 크기 제한 |
 | 415 | UNSUPPORTED_MEDIA_TYPE | 업로드/요청 형식 제한 |
@@ -1102,6 +1104,7 @@ termId는 같은 약관 종류의 안정적인 UUID. 새 약관이면 새 UUID �
 | 428 | PRECONDITION_REQUIRED | If-Match 누락 |
 | 429 | RATE_LIMITED | Retry-After 후 재시도 |
 | 503 | BOOK_PROVIDER_UNAVAILABLE / AI_UNAVAILABLE | 외부 연동 장애 |
+| 503 | TERMS_NOT_CONFIGURED | 가입 필수 약관의 발행·시행 설정이 준비되지 않음 |
 | 500 | INTERNAL_ERROR | 내부 정보 없는 오류, requestId로 추적 |
 
 비동기 접수 후 실패는 GET 상태 조회 자체를 500으로 만들지 않고 200 + status=FAILED + error.code(AI_GENERATION_FAILED/JOB_TIMEOUT 등)로 반환한다. 유효한 요청의 접수 전 오류는 해당 HTTP 오류로 응답한다.

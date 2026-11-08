@@ -1,1 +1,72 @@
 rootProject.name = 'nospo-backend'
+
+include ':member:application'
+project(':member:application').projectDir = file('modules/member/application')
+
+['member', 'terms', 'credit', 'identity', 'account-lifecycle'].each { name ->
+    include ":${name}"
+    project(":${name}").projectDir = file("modules/${name}")
+}
+
+include ':support'
+project(':support').projectDir = file('modules/support')
+
+include ':member:contract'
+project(':member:contract').projectDir = file('modules/member/contract')
+
+include ':member:domain'
+project(':member:domain').projectDir = file('modules/member/domain')
+
+include ':member:adapter-persistence'
+project(':member:adapter-persistence').projectDir = file('modules/member/adapter-persistence')
+
+include ':terms:contract'
+project(':terms:contract').projectDir = file('modules/terms/contract')
+
+include ':terms:application'
+project(':terms:application').projectDir = file('modules/terms/application')
+
+include ':terms:adapter-persistence'
+project(':terms:adapter-persistence').projectDir = file('modules/terms/adapter-persistence')
+
+include ':terms:adapter-web'
+project(':terms:adapter-web').projectDir = file('modules/terms/adapter-web')
+
+include ':credit:contract'
+project(':credit:contract').projectDir = file('modules/credit/contract')
+
+include ':credit:application'
+project(':credit:application').projectDir = file('modules/credit/application')
+
+include ':credit:adapter-persistence'
+project(':credit:adapter-persistence').projectDir = file('modules/credit/adapter-persistence')
+
+include ':identity:contract'
+project(':identity:contract').projectDir = file('modules/identity/contract')
+
+include ':identity:domain'
+project(':identity:domain').projectDir = file('modules/identity/domain')
+
+include ':identity:application'
+project(':identity:application').projectDir = file('modules/identity/application')
+
+include ':identity:adapter-persistence'
+project(':identity:adapter-persistence').projectDir = file('modules/identity/adapter-persistence')
+
+include ':identity:adapter-integration'
+project(':identity:adapter-integration').projectDir = file('modules/identity/adapter-integration')
+
+include ':identity:adapter-worker'
+project(':identity:adapter-worker').projectDir = file('modules/identity/adapter-worker')
+
+include ':identity:adapter-web'
+project(':identity:adapter-web').projectDir = file('modules/identity/adapter-web')
+
+include ':account-lifecycle:application'
+project(':account-lifecycle:application').projectDir = file('modules/account-lifecycle/application')
+
+include ':account-lifecycle:adapter-persistence'
+project(':account-lifecycle:adapter-persistence').projectDir = file('modules/account-lifecycle/adapter-persistence')
+
+include ':account-lifecycle:adapter-web'
+project(':account-lifecycle:adapter-web').projectDir = file('modules/account-lifecycle/adapter-web')

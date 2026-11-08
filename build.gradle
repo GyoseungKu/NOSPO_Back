@@ -55,4 +55,41 @@ dependencies {
 
 tasks.named('test') {
 	useJUnitPlatform()
+    if (project.hasProperty('skipMysql')) { exclude '**/MySqlEmailSignupTests.class' }
+}
+
+configure(subprojects.findAll { it.buildFile.exists() }) {
+    apply plugin: 'java-library'
+    apply plugin: 'io.spring.dependency-management'
+    repositories { mavenCentral() }
+    java { toolchain { languageVersion = JavaLanguageVersion.of(21) } }
+    tasks.named('jar') { archiveBaseName = project.path.substring(1).replace(':', '-') }
+    dependencyManagement { imports { mavenBom org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES } }
+    tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8'; options.compilerArgs += '-parameters' }
+}
+dependencies {
+    testRuntimeOnly 'com.h2database:h2'
+    testImplementation 'org.eclipse.angus:angus-mail'
+    implementation project(':support')
+    implementation project(':member:contract')
+    implementation project(':member:application')
+    implementation project(':member:domain')
+    implementation project(':member:adapter-persistence')
+    implementation project(':terms:contract')
+    implementation project(':terms:application')
+    implementation project(':terms:adapter-persistence')
+    implementation project(':terms:adapter-web')
+    implementation project(':credit:contract')
+    implementation project(':credit:application')
+    implementation project(':credit:adapter-persistence')
+    implementation project(':identity:contract')
+    implementation project(':identity:domain')
+    implementation project(':identity:application')
+    implementation project(':identity:adapter-persistence')
+    implementation project(':identity:adapter-integration')
+    implementation project(':identity:adapter-worker')
+    implementation project(':identity:adapter-web')
+    implementation project(':account-lifecycle:application')
+    implementation project(':account-lifecycle:adapter-persistence')
+    implementation project(':account-lifecycle:adapter-web')
 }

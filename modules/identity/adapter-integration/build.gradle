@@ -1,0 +1,10 @@
+plugins { id 'java-library' }
+dependencies {
+    api project(':identity:application')
+    api project(':support')
+    implementation 'org.springframework.boot:spring-boot-starter-mail'
+    implementation 'org.eclipse.angus:angus-mail'
+    implementation 'org.springframework.security:spring-security-crypto'
+    implementation 'org.springframework.security:spring-security-oauth2-jose'
+    implementation 'org.bouncycastle:bcprov-jdk18on:1.86'
+}
