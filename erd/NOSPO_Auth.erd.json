@@ -1,0 +1,3095 @@
+{
+  "$schema": "https://raw.githubusercontent.com/dineug/erd-editor/main/json-schema/schema.json",
+  "version": "3.0.0",
+  "settings": {
+    "originX": 25,
+    "originY": 25,
+    "zoomLevel": 0.75,
+    "show": 2023,
+    "database": 4,
+    "databaseName": "nospo_identity",
+    "canvasType": "ERD",
+    "language": 32,
+    "tableNameCase": 8,
+    "columnNameCase": 8,
+    "bracketType": 8,
+    "relationshipDataTypeSync": true,
+    "columnOrder": [
+      1,
+      2,
+      4,
+      8,
+      16,
+      32,
+      64
+    ],
+    "maxWidthComment": 160,
+    "lockSettings": 63
+  },
+  "doc": {
+    "tableIds": [
+      "t_member",
+      "t_account",
+      "t_password_credential",
+      "t_social_identity",
+      "t_auth_session",
+      "t_refresh_token",
+      "t_term",
+      "t_term_version",
+      "t_member_consent",
+      "t_auth_challenge",
+      "t_auth_proof",
+      "t_oauth_flow",
+      "t_idempotency_record",
+      "t_email_delivery",
+      "t_social_signup_context",
+      "t_withdrawal_operation",
+      "t_withdrawal_target"
+    ],
+    "relationshipIds": [
+      "r_account__member_id",
+      "r_password_credential__member_id",
+      "r_social_identity__member_id",
+      "r_auth_session__member_id",
+      "r_refresh_token__session_id",
+      "r_refresh_token__replaced_by_token_id",
+      "r_member_consent__member_id",
+      "r_term_version__term_id",
+      "r_member_consent__term_version_id",
+      "r_auth_challenge__member_id",
+      "r_auth_challenge__session_id",
+      "r_auth_proof__member_id",
+      "r_auth_proof__session_id",
+      "r_oauth_flow__member_id",
+      "r_oauth_flow__session_id",
+      "r_auth_proof__challenge_id",
+      "r_oauth_flow__reauth_proof_id",
+      "r_idempotency_record__member_id",
+      "r_email_delivery__challenge_id",
+      "r_email_delivery__member_id",
+      "r_social_signup_context__proof_id",
+      "r_social_signup_context__flow_id",
+      "r_social_signup_context__member_id",
+      "r_withdrawal_operation__member_id",
+      "r_withdrawal_target__operation_id"
+    ],
+    "indexIds": [
+      "ix_uq_social_provider_subject",
+      "ix_uq_social_member_provider",
+      "ix_uq_term_version",
+      "ix_ix_consent_latest",
+      "ix_ix_session_member",
+      "ix_ix_refresh_session",
+      "ix_ix_challenge_target",
+      "ix_ix_proof_challenge",
+      "ix_uq_idempotency_request",
+      "ix_ix_auth_session_expiry",
+      "ix_ix_refresh_token_expiry",
+      "ix_ix_auth_challenge_expiry",
+      "ix_ix_auth_proof_expiry",
+      "ix_ix_oauth_flow_expiry",
+      "ix_ix_idempotency_record_expiry",
+      "ix_ix_challenge_digest",
+      "ix_ix_auth_challenge_owner",
+      "ix_ix_auth_proof_owner",
+      "ix_ix_oauth_flow_owner",
+      "ix_ix_idempotency_record_owner",
+      "ix_ix_delivery_ready",
+      "ix_ix_delivery_expiry",
+      "ix_ix_delivery_owner",
+      "ix_ix_context_owner",
+      "ix_ix_withdrawal_ready",
+      "ix_ix_withdrawal_target_pending"
+    ],
+    "memoIds": [
+      "m_title",
+      "m_legend",
+      "m_core",
+      "m_terms",
+      "m_proof",
+      "m_oauth",
+      "m_idempotency",
+      "m_delivery",
+      "m_lifetimes",
+      "m_withdrawal"
+    ],
+    "tableGroupIds": [
+      "g_core",
+      "g_login",
+      "g_session",
+      "g_terms",
+      "g_verification",
+      "g_flow",
+      "g_delivery",
+      "g_withdrawal"
+    ]
+  },
+  "collections": {
+    "tableEntities": {
+      "t_member": {
+        "id": "t_member",
+        "name": "member",
+        "comment": "회원 프로필 · 탈퇴 시 실제 삭제",
+        "columnIds": [
+          "t_member__member_id",
+          "t_member__nickname",
+          "t_member__nickname_key",
+          "t_member__phone_number",
+          "t_member__profile_image_key",
+          "t_member__status",
+          "t_member__role",
+          "t_member__created_at",
+          "t_member__updated_at"
+        ],
+        "groupId": "g_core",
+        "ui": {
+          "x": 80,
+          "y": 290,
+          "color": "#2563eb"
+        }
+      },
+      "t_account": {
+        "id": "t_account",
+        "name": "account",
+        "comment": "서비스 이메일 · 로그인 수단과 분리",
+        "columnIds": [
+          "t_account__member_id",
+          "t_account__email",
+          "t_account__email_key",
+          "t_account__email_verified_at",
+          "t_account__created_at",
+          "t_account__updated_at"
+        ],
+        "groupId": "g_core",
+        "ui": {
+          "x": 760,
+          "y": 290,
+          "color": "#2563eb"
+        }
+      },
+      "t_password_credential": {
+        "id": "t_password_credential",
+        "name": "password_credential",
+        "comment": "이메일 로그인 · 카카오 전용은 행 없음",
+        "columnIds": [
+          "t_password_credential__member_id",
+          "t_password_credential__password_hash",
+          "t_password_credential__password_changed_at"
+        ],
+        "groupId": "g_login",
+        "ui": {
+          "x": 1460,
+          "y": 290,
+          "color": "#0891b2"
+        }
+      },
+      "t_social_identity": {
+        "id": "t_social_identity",
+        "name": "social_identity",
+        "comment": "카카오 연결 · 이메일 자동 병합 금지",
+        "columnIds": [
+          "t_social_identity__social_identity_id",
+          "t_social_identity__member_id",
+          "t_social_identity__provider",
+          "t_social_identity__provider_subject",
+          "t_social_identity__linked_at"
+        ],
+        "groupId": "g_login",
+        "ui": {
+          "x": 1460,
+          "y": 620,
+          "color": "#0891b2"
+        }
+      },
+      "t_auth_session": {
+        "id": "t_auth_session",
+        "name": "auth_session",
+        "comment": "로그인 단위 · JWT의 sid로 조회",
+        "columnIds": [
+          "t_auth_session__session_id",
+          "t_auth_session__member_id",
+          "t_auth_session__created_at",
+          "t_auth_session__expires_at",
+          "t_auth_session__revoked_at",
+          "t_auth_session__revoke_reason"
+        ],
+        "groupId": "g_session",
+        "ui": {
+          "x": 2160,
+          "y": 290,
+          "color": "#7c3aed"
+        }
+      },
+      "t_refresh_token": {
+        "id": "t_refresh_token",
+        "name": "refresh_token",
+        "comment": "Refresh 회전 이력 · 원문 저장 금지",
+        "columnIds": [
+          "t_refresh_token__refresh_token_id",
+          "t_refresh_token__session_id",
+          "t_refresh_token__token_hash",
+          "t_refresh_token__issued_at",
+          "t_refresh_token__expires_at",
+          "t_refresh_token__used_at",
+          "t_refresh_token__revoked_at",
+          "t_refresh_token__replaced_by_token_id"
+        ],
+        "groupId": "g_session",
+        "ui": {
+          "x": 2160,
+          "y": 630,
+          "color": "#7c3aed"
+        }
+      },
+      "t_term": {
+        "id": "t_term",
+        "name": "term",
+        "comment": "약관 종류 · 고정 식별자",
+        "columnIds": [
+          "t_term__term_id",
+          "t_term__type",
+          "t_term__created_at"
+        ],
+        "groupId": "g_terms",
+        "ui": {
+          "x": 80,
+          "y": 1200,
+          "color": "#16a34a"
+        }
+      },
+      "t_term_version": {
+        "id": "t_term_version",
+        "name": "term_version",
+        "comment": "불변 약관 본문 · 개정은 새 버전",
+        "columnIds": [
+          "t_term_version__term_version_id",
+          "t_term_version__term_id",
+          "t_term_version__version",
+          "t_term_version__title",
+          "t_term_version__content",
+          "t_term_version__required",
+          "t_term_version__publication_status",
+          "t_term_version__effective_at",
+          "t_term_version__requires_reconsent",
+          "t_term_version__created_at"
+        ],
+        "groupId": "g_terms",
+        "ui": {
+          "x": 80,
+          "y": 1530,
+          "color": "#16a34a"
+        }
+      },
+      "t_member_consent": {
+        "id": "t_member_consent",
+        "name": "member_consent",
+        "comment": "동의 · 미동의 이력 / append-only",
+        "columnIds": [
+          "t_member_consent__consent_id",
+          "t_member_consent__member_id",
+          "t_member_consent__term_version_id",
+          "t_member_consent__agreed",
+          "t_member_consent__agreed_at"
+        ],
+        "groupId": "g_terms",
+        "ui": {
+          "x": 760,
+          "y": 1200,
+          "color": "#16a34a"
+        }
+      },
+      "t_auth_challenge": {
+        "id": "t_auth_challenge",
+        "name": "auth_challenge",
+        "comment": "이메일 링크 · 인증번호 검증 요청",
+        "columnIds": [
+          "t_auth_challenge__challenge_id",
+          "t_auth_challenge__member_id",
+          "t_auth_challenge__session_id",
+          "t_auth_challenge__purpose",
+          "t_auth_challenge__target_email",
+          "t_auth_challenge__secret_digest",
+          "t_auth_challenge__attempt_count",
+          "t_auth_challenge__created_at",
+          "t_auth_challenge__expires_at",
+          "t_auth_challenge__resend_available_at",
+          "t_auth_challenge__verified_at",
+          "t_auth_challenge__invalidated_at",
+          "t_auth_challenge__target_email_key"
+        ],
+        "groupId": "g_verification",
+        "ui": {
+          "x": 1460,
+          "y": 1200,
+          "color": "#d97706"
+        }
+      },
+      "t_auth_proof": {
+        "id": "t_auth_proof",
+        "name": "auth_proof",
+        "comment": "인증 완료 증명 · 최종 작업에서 소비",
+        "columnIds": [
+          "t_auth_proof__proof_id",
+          "t_auth_proof__challenge_id",
+          "t_auth_proof__member_id",
+          "t_auth_proof__session_id",
+          "t_auth_proof__purpose",
+          "t_auth_proof__proof_hash",
+          "t_auth_proof__target_email",
+          "t_auth_proof__provider",
+          "t_auth_proof__provider_subject",
+          "t_auth_proof__created_at",
+          "t_auth_proof__expires_at",
+          "t_auth_proof__consumed_at",
+          "t_auth_proof__invalidated_at",
+          "t_auth_proof__target_email_key"
+        ],
+        "groupId": "g_verification",
+        "ui": {
+          "x": 2160,
+          "y": 1200,
+          "color": "#d97706"
+        }
+      },
+      "t_oauth_flow": {
+        "id": "t_oauth_flow",
+        "name": "oauth_flow",
+        "comment": "카카오 로그인 · 재인증 · 연결 흐름",
+        "columnIds": [
+          "t_oauth_flow__flow_id",
+          "t_oauth_flow__member_id",
+          "t_oauth_flow__session_id",
+          "t_oauth_flow__reauth_proof_id",
+          "t_oauth_flow__state_hash",
+          "t_oauth_flow__browser_binding_hash",
+          "t_oauth_flow__flow_type",
+          "t_oauth_flow__purpose",
+          "t_oauth_flow__return_path",
+          "t_oauth_flow__exchange_code_hash",
+          "t_oauth_flow__result_ciphertext",
+          "t_oauth_flow__created_at",
+          "t_oauth_flow__expires_at",
+          "t_oauth_flow__callback_consumed_at",
+          "t_oauth_flow__exchange_expires_at",
+          "t_oauth_flow__exchange_consumed_at"
+        ],
+        "groupId": "g_flow",
+        "ui": {
+          "x": 80,
+          "y": 2340,
+          "color": "#db2777"
+        }
+      },
+      "t_idempotency_record": {
+        "id": "t_idempotency_record",
+        "name": "idempotency_record",
+        "comment": "가입 · 로그인 방식 연결 중복 방지",
+        "columnIds": [
+          "t_idempotency_record__idempotency_id",
+          "t_idempotency_record__member_id",
+          "t_idempotency_record__scope_key",
+          "t_idempotency_record__http_method",
+          "t_idempotency_record__request_path",
+          "t_idempotency_record__idempotency_key",
+          "t_idempotency_record__request_fingerprint",
+          "t_idempotency_record__status",
+          "t_idempotency_record__response_status",
+          "t_idempotency_record__response_ciphertext",
+          "t_idempotency_record__created_at",
+          "t_idempotency_record__expires_at"
+        ],
+        "groupId": "g_flow",
+        "ui": {
+          "x": 1460,
+          "y": 2340,
+          "color": "#db2777"
+        }
+      },
+      "t_email_delivery": {
+        "id": "t_email_delivery",
+        "name": "email_delivery",
+        "comment": "인증 요청과 함께 저장하는 발송 작업",
+        "columnIds": [
+          "t_email_delivery__delivery_id",
+          "t_email_delivery__challenge_id",
+          "t_email_delivery__member_id",
+          "t_email_delivery__status",
+          "t_email_delivery__payload_ciphertext",
+          "t_email_delivery__payload_key_id",
+          "t_email_delivery__payload_expires_at",
+          "t_email_delivery__attempt_count",
+          "t_email_delivery__next_attempt_at",
+          "t_email_delivery__lease_token",
+          "t_email_delivery__lease_until",
+          "t_email_delivery__cancellation_requested_at",
+          "t_email_delivery__last_error_code",
+          "t_email_delivery__accepted_at",
+          "t_email_delivery__finished_at",
+          "t_email_delivery__created_at",
+          "t_email_delivery__updated_at"
+        ],
+        "groupId": "g_delivery",
+        "ui": {
+          "x": 2900,
+          "y": 1200,
+          "color": "#0d9488"
+        }
+      },
+      "t_social_signup_context": {
+        "id": "t_social_signup_context",
+        "name": "social_signup_context",
+        "comment": "signupProof 수명 동안 가입 정보 보존",
+        "columnIds": [
+          "t_social_signup_context__proof_id",
+          "t_social_signup_context__flow_id",
+          "t_social_signup_context__member_id",
+          "t_social_signup_context__provider",
+          "t_social_signup_context__provider_subject",
+          "t_social_signup_context__email",
+          "t_social_signup_context__email_key",
+          "t_social_signup_context__email_verified",
+          "t_social_signup_context__nickname_suggestion",
+          "t_social_signup_context__created_at"
+        ],
+        "groupId": "g_delivery",
+        "ui": {
+          "x": 3620,
+          "y": 1200,
+          "color": "#0d9488"
+        }
+      },
+      "t_withdrawal_operation": {
+        "id": "t_withdrawal_operation",
+        "name": "withdrawal_operation",
+        "comment": "WITHDRAWING과 같은 트랜잭션 생성",
+        "columnIds": [
+          "t_withdrawal_operation__operation_id",
+          "t_withdrawal_operation__member_id",
+          "t_withdrawal_operation__status",
+          "t_withdrawal_operation__current_stage",
+          "t_withdrawal_operation__retry_count",
+          "t_withdrawal_operation__next_attempt_at",
+          "t_withdrawal_operation__last_error_code",
+          "t_withdrawal_operation__lease_token",
+          "t_withdrawal_operation__lease_until",
+          "t_withdrawal_operation__created_at",
+          "t_withdrawal_operation__updated_at"
+        ],
+        "groupId": "g_withdrawal",
+        "ui": {
+          "x": 80,
+          "y": 3150,
+          "color": "#dc2626"
+        }
+      },
+      "t_withdrawal_target": {
+        "id": "t_withdrawal_target",
+        "name": "withdrawal_target",
+        "comment": "DB 참조 제거 전에 삭제 대상 확보",
+        "columnIds": [
+          "t_withdrawal_target__target_id",
+          "t_withdrawal_target__operation_id",
+          "t_withdrawal_target__resource_type",
+          "t_withdrawal_target__locator_ciphertext",
+          "t_withdrawal_target__locator_key_id",
+          "t_withdrawal_target__status",
+          "t_withdrawal_target__completed_at",
+          "t_withdrawal_target__created_at"
+        ],
+        "groupId": "g_withdrawal",
+        "ui": {
+          "x": 800,
+          "y": 3150,
+          "color": "#dc2626"
+        }
+      }
+    },
+    "tableColumnEntities": {
+      "t_member__member_id": {
+        "id": "t_member__member_id",
+        "tableId": "t_member",
+        "name": "member_id",
+        "comment": "회원 UUID",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 10
+      },
+      "t_member__nickname": {
+        "id": "t_member__nickname",
+        "tableId": "t_member",
+        "name": "nickname",
+        "comment": "표시 닉네임",
+        "dataType": "VARCHAR(20)",
+        "default": "",
+        "options": 8
+      },
+      "t_member__nickname_key": {
+        "id": "t_member__nickname_key",
+        "tableId": "t_member",
+        "name": "nickname_key",
+        "comment": "정규화 중복 검사 키",
+        "dataType": "VARCHAR(20)",
+        "default": "",
+        "options": 12
+      },
+      "t_member__phone_number": {
+        "id": "t_member__phone_number",
+        "tableId": "t_member",
+        "name": "phone_number",
+        "comment": "E.164 · 중복 허용",
+        "dataType": "VARCHAR(16)",
+        "default": "",
+        "options": 8
+      },
+      "t_member__profile_image_key": {
+        "id": "t_member__profile_image_key",
+        "tableId": "t_member",
+        "name": "profile_image_key",
+        "comment": "프로필 저장소 키",
+        "dataType": "VARCHAR(512)",
+        "default": "",
+        "options": 0
+      },
+      "t_member__status": {
+        "id": "t_member__status",
+        "tableId": "t_member",
+        "name": "status",
+        "comment": "ACTIVE / WITHDRAWING",
+        "dataType": "VARCHAR(24)",
+        "default": "'ACTIVE'",
+        "options": 8
+      },
+      "t_member__role": {
+        "id": "t_member__role",
+        "tableId": "t_member",
+        "name": "role",
+        "comment": "USER / ADMIN",
+        "dataType": "VARCHAR(16)",
+        "default": "'USER'",
+        "options": 8
+      },
+      "t_member__created_at": {
+        "id": "t_member__created_at",
+        "tableId": "t_member",
+        "name": "created_at",
+        "comment": "가입 시각 UTC",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 8
+      },
+      "t_member__updated_at": {
+        "id": "t_member__updated_at",
+        "tableId": "t_member",
+        "name": "updated_at",
+        "comment": "수정 시각 UTC",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 8
+      },
+      "t_account__member_id": {
+        "id": "t_account__member_id",
+        "tableId": "t_account",
+        "name": "member_id",
+        "comment": "회원과 1:1 · PK/FK",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 10
+      },
+      "t_account__email": {
+        "id": "t_account__email",
+        "tableId": "t_account",
+        "name": "email",
+        "comment": "서비스 이메일",
+        "dataType": "VARCHAR(254)",
+        "default": "",
+        "options": 8
+      },
+      "t_account__email_key": {
+        "id": "t_account__email_key",
+        "tableId": "t_account",
+        "name": "email_key",
+        "comment": "정규화 로그인 키",
+        "dataType": "VARCHAR(254)",
+        "default": "",
+        "options": 12
+      },
+      "t_account__email_verified_at": {
+        "id": "t_account__email_verified_at",
+        "tableId": "t_account",
+        "name": "email_verified_at",
+        "comment": "이메일 소유권 확인",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 8
+      },
+      "t_account__created_at": {
+        "id": "t_account__created_at",
+        "tableId": "t_account",
+        "name": "created_at",
+        "comment": "생성 시각 UTC",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 8
+      },
+      "t_account__updated_at": {
+        "id": "t_account__updated_at",
+        "tableId": "t_account",
+        "name": "updated_at",
+        "comment": "수정 시각 UTC",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 8
+      },
+      "t_password_credential__member_id": {
+        "id": "t_password_credential__member_id",
+        "tableId": "t_password_credential",
+        "name": "member_id",
+        "comment": "인증 계정 PK/FK",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 10
+      },
+      "t_password_credential__password_hash": {
+        "id": "t_password_credential__password_hash",
+        "tableId": "t_password_credential",
+        "name": "password_hash",
+        "comment": "Argon2id 해시",
+        "dataType": "VARCHAR(255)",
+        "default": "",
+        "options": 8
+      },
+      "t_password_credential__password_changed_at": {
+        "id": "t_password_credential__password_changed_at",
+        "tableId": "t_password_credential",
+        "name": "password_changed_at",
+        "comment": "비밀번호 설정/변경",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 8
+      },
+      "t_social_identity__social_identity_id": {
+        "id": "t_social_identity__social_identity_id",
+        "tableId": "t_social_identity",
+        "name": "social_identity_id",
+        "comment": "연결 UUID",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 10
+      },
+      "t_social_identity__member_id": {
+        "id": "t_social_identity__member_id",
+        "tableId": "t_social_identity",
+        "name": "member_id",
+        "comment": "인증 계정 FK",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 8
+      },
+      "t_social_identity__provider": {
+        "id": "t_social_identity__provider",
+        "tableId": "t_social_identity",
+        "name": "provider",
+        "comment": "KAKAO",
+        "dataType": "VARCHAR(20)",
+        "default": "",
+        "options": 8
+      },
+      "t_social_identity__provider_subject": {
+        "id": "t_social_identity__provider_subject",
+        "tableId": "t_social_identity",
+        "name": "provider_subject",
+        "comment": "카카오 고유 식별자",
+        "dataType": "VARCHAR(128)",
+        "default": "",
+        "options": 8
+      },
+      "t_social_identity__linked_at": {
+        "id": "t_social_identity__linked_at",
+        "tableId": "t_social_identity",
+        "name": "linked_at",
+        "comment": "연결 완료 시각",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 8
+      },
+      "t_auth_session__session_id": {
+        "id": "t_auth_session__session_id",
+        "tableId": "t_auth_session",
+        "name": "session_id",
+        "comment": "로그인 세션 UUID",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 10
+      },
+      "t_auth_session__member_id": {
+        "id": "t_auth_session__member_id",
+        "tableId": "t_auth_session",
+        "name": "member_id",
+        "comment": "인증 계정 FK",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 8
+      },
+      "t_auth_session__created_at": {
+        "id": "t_auth_session__created_at",
+        "tableId": "t_auth_session",
+        "name": "created_at",
+        "comment": "로그인 시각 UTC",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 8
+      },
+      "t_auth_session__expires_at": {
+        "id": "t_auth_session__expires_at",
+        "tableId": "t_auth_session",
+        "name": "expires_at",
+        "comment": "세션 만료 시각",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 8
+      },
+      "t_auth_session__revoked_at": {
+        "id": "t_auth_session__revoked_at",
+        "tableId": "t_auth_session",
+        "name": "revoked_at",
+        "comment": "폐기 시각",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 0
+      },
+      "t_auth_session__revoke_reason": {
+        "id": "t_auth_session__revoke_reason",
+        "tableId": "t_auth_session",
+        "name": "revoke_reason",
+        "comment": "로그아웃/재사용/변경",
+        "dataType": "VARCHAR(40)",
+        "default": "",
+        "options": 0
+      },
+      "t_refresh_token__refresh_token_id": {
+        "id": "t_refresh_token__refresh_token_id",
+        "tableId": "t_refresh_token",
+        "name": "refresh_token_id",
+        "comment": "Refresh UUID",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 10
+      },
+      "t_refresh_token__session_id": {
+        "id": "t_refresh_token__session_id",
+        "tableId": "t_refresh_token",
+        "name": "session_id",
+        "comment": "소속 세션 FK",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 8
+      },
+      "t_refresh_token__token_hash": {
+        "id": "t_refresh_token__token_hash",
+        "tableId": "t_refresh_token",
+        "name": "token_hash",
+        "comment": "고엔트로피 토큰 해시",
+        "dataType": "BINARY(32)",
+        "default": "",
+        "options": 12
+      },
+      "t_refresh_token__issued_at": {
+        "id": "t_refresh_token__issued_at",
+        "tableId": "t_refresh_token",
+        "name": "issued_at",
+        "comment": "발급 시각",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 8
+      },
+      "t_refresh_token__expires_at": {
+        "id": "t_refresh_token__expires_at",
+        "tableId": "t_refresh_token",
+        "name": "expires_at",
+        "comment": "만료 시각",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 8
+      },
+      "t_refresh_token__used_at": {
+        "id": "t_refresh_token__used_at",
+        "tableId": "t_refresh_token",
+        "name": "used_at",
+        "comment": "회전에 사용된 시각",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 0
+      },
+      "t_refresh_token__revoked_at": {
+        "id": "t_refresh_token__revoked_at",
+        "tableId": "t_refresh_token",
+        "name": "revoked_at",
+        "comment": "무효화 시각",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 0
+      },
+      "t_refresh_token__replaced_by_token_id": {
+        "id": "t_refresh_token__replaced_by_token_id",
+        "tableId": "t_refresh_token",
+        "name": "replaced_by_token_id",
+        "comment": "후속 토큰 FK",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 4
+      },
+      "t_term__term_id": {
+        "id": "t_term__term_id",
+        "tableId": "t_term",
+        "name": "term_id",
+        "comment": "약관 종류 UUID",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 10
+      },
+      "t_term__type": {
+        "id": "t_term__type",
+        "tableId": "t_term",
+        "name": "type",
+        "comment": "SERVICE/PRIVACY/OPTIONAL",
+        "dataType": "VARCHAR(24)",
+        "default": "",
+        "options": 12
+      },
+      "t_term__created_at": {
+        "id": "t_term__created_at",
+        "tableId": "t_term",
+        "name": "created_at",
+        "comment": "생성 시각",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 8
+      },
+      "t_term_version__term_version_id": {
+        "id": "t_term_version__term_version_id",
+        "tableId": "t_term_version",
+        "name": "term_version_id",
+        "comment": "약관 버전 UUID",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 10
+      },
+      "t_term_version__term_id": {
+        "id": "t_term_version__term_id",
+        "tableId": "t_term_version",
+        "name": "term_id",
+        "comment": "약관 종류 FK",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 8
+      },
+      "t_term_version__version": {
+        "id": "t_term_version__version",
+        "tableId": "t_term_version",
+        "name": "version",
+        "comment": "버전 문자열",
+        "dataType": "VARCHAR(32)",
+        "default": "",
+        "options": 8
+      },
+      "t_term_version__title": {
+        "id": "t_term_version__title",
+        "tableId": "t_term_version",
+        "name": "title",
+        "comment": "약관 제목",
+        "dataType": "VARCHAR(200)",
+        "default": "",
+        "options": 8
+      },
+      "t_term_version__content": {
+        "id": "t_term_version__content",
+        "tableId": "t_term_version",
+        "name": "content",
+        "comment": "약관 본문",
+        "dataType": "LONGTEXT",
+        "default": "",
+        "options": 8
+      },
+      "t_term_version__required": {
+        "id": "t_term_version__required",
+        "tableId": "t_term_version",
+        "name": "required",
+        "comment": "필수 동의 여부",
+        "dataType": "BOOLEAN",
+        "default": "",
+        "options": 8
+      },
+      "t_term_version__publication_status": {
+        "id": "t_term_version__publication_status",
+        "tableId": "t_term_version",
+        "name": "publication_status",
+        "comment": "DRAFT / PUBLISHED",
+        "dataType": "VARCHAR(20)",
+        "default": "'DRAFT'",
+        "options": 8
+      },
+      "t_term_version__effective_at": {
+        "id": "t_term_version__effective_at",
+        "tableId": "t_term_version",
+        "name": "effective_at",
+        "comment": "시행 예정 시각",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 0
+      },
+      "t_term_version__requires_reconsent": {
+        "id": "t_term_version__requires_reconsent",
+        "tableId": "t_term_version",
+        "name": "requires_reconsent",
+        "comment": "기존 회원 재동의",
+        "dataType": "BOOLEAN",
+        "default": "FALSE",
+        "options": 8
+      },
+      "t_term_version__created_at": {
+        "id": "t_term_version__created_at",
+        "tableId": "t_term_version",
+        "name": "created_at",
+        "comment": "등록 시각",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 8
+      },
+      "t_member_consent__consent_id": {
+        "id": "t_member_consent__consent_id",
+        "tableId": "t_member_consent",
+        "name": "consent_id",
+        "comment": "동의 이력 UUID",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 10
+      },
+      "t_member_consent__member_id": {
+        "id": "t_member_consent__member_id",
+        "tableId": "t_member_consent",
+        "name": "member_id",
+        "comment": "회원 FK",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 8
+      },
+      "t_member_consent__term_version_id": {
+        "id": "t_member_consent__term_version_id",
+        "tableId": "t_member_consent",
+        "name": "term_version_id",
+        "comment": "동의 대상 버전 FK",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 8
+      },
+      "t_member_consent__agreed": {
+        "id": "t_member_consent__agreed",
+        "tableId": "t_member_consent",
+        "name": "agreed",
+        "comment": "동의 / 미동의",
+        "dataType": "BOOLEAN",
+        "default": "",
+        "options": 8
+      },
+      "t_member_consent__agreed_at": {
+        "id": "t_member_consent__agreed_at",
+        "tableId": "t_member_consent",
+        "name": "agreed_at",
+        "comment": "응답 시각 UTC",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 8
+      },
+      "t_auth_challenge__challenge_id": {
+        "id": "t_auth_challenge__challenge_id",
+        "tableId": "t_auth_challenge",
+        "name": "challenge_id",
+        "comment": "인증 요청 UUID",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 10
+      },
+      "t_auth_challenge__member_id": {
+        "id": "t_auth_challenge__member_id",
+        "tableId": "t_auth_challenge",
+        "name": "member_id",
+        "comment": "가입 전에는 NULL",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 0
+      },
+      "t_auth_challenge__session_id": {
+        "id": "t_auth_challenge__session_id",
+        "tableId": "t_auth_challenge",
+        "name": "session_id",
+        "comment": "회원 인증 시 세션 결합",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 0
+      },
+      "t_auth_challenge__purpose": {
+        "id": "t_auth_challenge__purpose",
+        "tableId": "t_auth_challenge",
+        "name": "purpose",
+        "comment": "SIGNUP/RESET/CHANGE/ADD",
+        "dataType": "VARCHAR(32)",
+        "default": "",
+        "options": 8
+      },
+      "t_auth_challenge__target_email": {
+        "id": "t_auth_challenge__target_email",
+        "tableId": "t_auth_challenge",
+        "name": "target_email",
+        "comment": "인증 대상 이메일",
+        "dataType": "VARCHAR(254)",
+        "default": "",
+        "options": 8
+      },
+      "t_auth_challenge__secret_digest": {
+        "id": "t_auth_challenge__secret_digest",
+        "tableId": "t_auth_challenge",
+        "name": "secret_digest",
+        "comment": "링크 해시 / OTP HMAC",
+        "dataType": "BINARY(32)",
+        "default": "",
+        "options": 8
+      },
+      "t_auth_challenge__attempt_count": {
+        "id": "t_auth_challenge__attempt_count",
+        "tableId": "t_auth_challenge",
+        "name": "attempt_count",
+        "comment": "인증번호 실패 횟수",
+        "dataType": "INT",
+        "default": "0",
+        "options": 8
+      },
+      "t_auth_challenge__created_at": {
+        "id": "t_auth_challenge__created_at",
+        "tableId": "t_auth_challenge",
+        "name": "created_at",
+        "comment": "발송 요청 시각",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 8
+      },
+      "t_auth_challenge__expires_at": {
+        "id": "t_auth_challenge__expires_at",
+        "tableId": "t_auth_challenge",
+        "name": "expires_at",
+        "comment": "인증 요청 10분",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 8
+      },
+      "t_auth_challenge__resend_available_at": {
+        "id": "t_auth_challenge__resend_available_at",
+        "tableId": "t_auth_challenge",
+        "name": "resend_available_at",
+        "comment": "재발송 가능 시각",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 8
+      },
+      "t_auth_challenge__verified_at": {
+        "id": "t_auth_challenge__verified_at",
+        "tableId": "t_auth_challenge",
+        "name": "verified_at",
+        "comment": "검증 성공 시각",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 0
+      },
+      "t_auth_challenge__invalidated_at": {
+        "id": "t_auth_challenge__invalidated_at",
+        "tableId": "t_auth_challenge",
+        "name": "invalidated_at",
+        "comment": "재발송 시 무효화",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 0
+      },
+      "t_auth_proof__proof_id": {
+        "id": "t_auth_proof__proof_id",
+        "tableId": "t_auth_proof",
+        "name": "proof_id",
+        "comment": "증명 UUID",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 10
+      },
+      "t_auth_proof__challenge_id": {
+        "id": "t_auth_proof__challenge_id",
+        "tableId": "t_auth_proof",
+        "name": "challenge_id",
+        "comment": "이메일 인증 요청 FK",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 4
+      },
+      "t_auth_proof__member_id": {
+        "id": "t_auth_proof__member_id",
+        "tableId": "t_auth_proof",
+        "name": "member_id",
+        "comment": "가입 전에는 NULL",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 0
+      },
+      "t_auth_proof__session_id": {
+        "id": "t_auth_proof__session_id",
+        "tableId": "t_auth_proof",
+        "name": "session_id",
+        "comment": "본인 재인증 세션 FK",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 0
+      },
+      "t_auth_proof__purpose": {
+        "id": "t_auth_proof__purpose",
+        "tableId": "t_auth_proof",
+        "name": "purpose",
+        "comment": "가입/재설정/연결/탈퇴",
+        "dataType": "VARCHAR(40)",
+        "default": "",
+        "options": 8
+      },
+      "t_auth_proof__proof_hash": {
+        "id": "t_auth_proof__proof_hash",
+        "tableId": "t_auth_proof",
+        "name": "proof_hash",
+        "comment": "일회용 증명 해시",
+        "dataType": "BINARY(32)",
+        "default": "",
+        "options": 12
+      },
+      "t_auth_proof__target_email": {
+        "id": "t_auth_proof__target_email",
+        "tableId": "t_auth_proof",
+        "name": "target_email",
+        "comment": "검증된 대상 이메일",
+        "dataType": "VARCHAR(254)",
+        "default": "",
+        "options": 0
+      },
+      "t_auth_proof__provider": {
+        "id": "t_auth_proof__provider",
+        "tableId": "t_auth_proof",
+        "name": "provider",
+        "comment": "소셜 증명 KAKAO",
+        "dataType": "VARCHAR(20)",
+        "default": "",
+        "options": 0
+      },
+      "t_auth_proof__provider_subject": {
+        "id": "t_auth_proof__provider_subject",
+        "tableId": "t_auth_proof",
+        "name": "provider_subject",
+        "comment": "검증된 카카오 식별자",
+        "dataType": "VARCHAR(128)",
+        "default": "",
+        "options": 0
+      },
+      "t_auth_proof__created_at": {
+        "id": "t_auth_proof__created_at",
+        "tableId": "t_auth_proof",
+        "name": "created_at",
+        "comment": "발급 시각",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 8
+      },
+      "t_auth_proof__expires_at": {
+        "id": "t_auth_proof__expires_at",
+        "tableId": "t_auth_proof",
+        "name": "expires_at",
+        "comment": "목적별 5/10/15분",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 8
+      },
+      "t_auth_proof__consumed_at": {
+        "id": "t_auth_proof__consumed_at",
+        "tableId": "t_auth_proof",
+        "name": "consumed_at",
+        "comment": "최종 성공 시 1회 소비",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 0
+      },
+      "t_auth_proof__invalidated_at": {
+        "id": "t_auth_proof__invalidated_at",
+        "tableId": "t_auth_proof",
+        "name": "invalidated_at",
+        "comment": "재발송/탈퇴 무효화",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 0
+      },
+      "t_oauth_flow__flow_id": {
+        "id": "t_oauth_flow__flow_id",
+        "tableId": "t_oauth_flow",
+        "name": "flow_id",
+        "comment": "OAuth 흐름 UUID",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 10
+      },
+      "t_oauth_flow__member_id": {
+        "id": "t_oauth_flow__member_id",
+        "tableId": "t_oauth_flow",
+        "name": "member_id",
+        "comment": "로그인 시작은 NULL",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 0
+      },
+      "t_oauth_flow__session_id": {
+        "id": "t_oauth_flow__session_id",
+        "tableId": "t_oauth_flow",
+        "name": "session_id",
+        "comment": "재인증/연결 세션 FK",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 0
+      },
+      "t_oauth_flow__reauth_proof_id": {
+        "id": "t_oauth_flow__reauth_proof_id",
+        "tableId": "t_oauth_flow",
+        "name": "reauth_proof_id",
+        "comment": "연결 시 재인증 증명 FK",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 0
+      },
+      "t_oauth_flow__state_hash": {
+        "id": "t_oauth_flow__state_hash",
+        "tableId": "t_oauth_flow",
+        "name": "state_hash",
+        "comment": "OAuth state 해시",
+        "dataType": "BINARY(32)",
+        "default": "",
+        "options": 12
+      },
+      "t_oauth_flow__browser_binding_hash": {
+        "id": "t_oauth_flow__browser_binding_hash",
+        "tableId": "t_oauth_flow",
+        "name": "browser_binding_hash",
+        "comment": "일회용 흐름 쿠키 해시",
+        "dataType": "BINARY(32)",
+        "default": "",
+        "options": 8
+      },
+      "t_oauth_flow__flow_type": {
+        "id": "t_oauth_flow__flow_type",
+        "tableId": "t_oauth_flow",
+        "name": "flow_type",
+        "comment": "LOGIN/REAUTH/LINK",
+        "dataType": "VARCHAR(24)",
+        "default": "",
+        "options": 8
+      },
+      "t_oauth_flow__purpose": {
+        "id": "t_oauth_flow__purpose",
+        "tableId": "t_oauth_flow",
+        "name": "purpose",
+        "comment": "재인증 목적",
+        "dataType": "VARCHAR(40)",
+        "default": "",
+        "options": 0
+      },
+      "t_oauth_flow__return_path": {
+        "id": "t_oauth_flow__return_path",
+        "tableId": "t_oauth_flow",
+        "name": "return_path",
+        "comment": "검증된 내부 상대경로",
+        "dataType": "VARCHAR(512)",
+        "default": "",
+        "options": 8
+      },
+      "t_oauth_flow__exchange_code_hash": {
+        "id": "t_oauth_flow__exchange_code_hash",
+        "tableId": "t_oauth_flow",
+        "name": "exchange_code_hash",
+        "comment": "콜백 교환 코드 해시",
+        "dataType": "BINARY(32)",
+        "default": "",
+        "options": 4
+      },
+      "t_oauth_flow__result_ciphertext": {
+        "id": "t_oauth_flow__result_ciphertext",
+        "tableId": "t_oauth_flow",
+        "name": "result_ciphertext",
+        "comment": "암호화된 교환 컨텍스트",
+        "dataType": "BLOB",
+        "default": "",
+        "options": 0
+      },
+      "t_oauth_flow__created_at": {
+        "id": "t_oauth_flow__created_at",
+        "tableId": "t_oauth_flow",
+        "name": "created_at",
+        "comment": "생성 시각",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 8
+      },
+      "t_oauth_flow__expires_at": {
+        "id": "t_oauth_flow__expires_at",
+        "tableId": "t_oauth_flow",
+        "name": "expires_at",
+        "comment": "OAuth 흐름 만료",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 8
+      },
+      "t_oauth_flow__callback_consumed_at": {
+        "id": "t_oauth_flow__callback_consumed_at",
+        "tableId": "t_oauth_flow",
+        "name": "callback_consumed_at",
+        "comment": "콜백 1회 처리",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 0
+      },
+      "t_oauth_flow__exchange_expires_at": {
+        "id": "t_oauth_flow__exchange_expires_at",
+        "tableId": "t_oauth_flow",
+        "name": "exchange_expires_at",
+        "comment": "교환 코드 60초",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 0
+      },
+      "t_oauth_flow__exchange_consumed_at": {
+        "id": "t_oauth_flow__exchange_consumed_at",
+        "tableId": "t_oauth_flow",
+        "name": "exchange_consumed_at",
+        "comment": "교환 1회 처리",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 0
+      },
+      "t_idempotency_record__idempotency_id": {
+        "id": "t_idempotency_record__idempotency_id",
+        "tableId": "t_idempotency_record",
+        "name": "idempotency_id",
+        "comment": "멱등 처리 UUID",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 10
+      },
+      "t_idempotency_record__member_id": {
+        "id": "t_idempotency_record__member_id",
+        "tableId": "t_idempotency_record",
+        "name": "member_id",
+        "comment": "완료 후 회원 연결",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 0
+      },
+      "t_idempotency_record__scope_key": {
+        "id": "t_idempotency_record__scope_key",
+        "tableId": "t_idempotency_record",
+        "name": "scope_key",
+        "comment": "회원/가입시도 범위",
+        "dataType": "VARCHAR(160)",
+        "default": "",
+        "options": 8
+      },
+      "t_idempotency_record__http_method": {
+        "id": "t_idempotency_record__http_method",
+        "tableId": "t_idempotency_record",
+        "name": "http_method",
+        "comment": "HTTP 메서드",
+        "dataType": "VARCHAR(8)",
+        "default": "",
+        "options": 8
+      },
+      "t_idempotency_record__request_path": {
+        "id": "t_idempotency_record__request_path",
+        "tableId": "t_idempotency_record",
+        "name": "request_path",
+        "comment": "요청 경로",
+        "dataType": "VARCHAR(255)",
+        "default": "",
+        "options": 8
+      },
+      "t_idempotency_record__idempotency_key": {
+        "id": "t_idempotency_record__idempotency_key",
+        "tableId": "t_idempotency_record",
+        "name": "idempotency_key",
+        "comment": "클라이언트 요청 UUID",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 8
+      },
+      "t_idempotency_record__request_fingerprint": {
+        "id": "t_idempotency_record__request_fingerprint",
+        "tableId": "t_idempotency_record",
+        "name": "request_fingerprint",
+        "comment": "민감 요청 HMAC",
+        "dataType": "BINARY(32)",
+        "default": "",
+        "options": 8
+      },
+      "t_idempotency_record__status": {
+        "id": "t_idempotency_record__status",
+        "tableId": "t_idempotency_record",
+        "name": "status",
+        "comment": "PROCESSING / COMPLETED",
+        "dataType": "VARCHAR(20)",
+        "default": "",
+        "options": 8
+      },
+      "t_idempotency_record__response_status": {
+        "id": "t_idempotency_record__response_status",
+        "tableId": "t_idempotency_record",
+        "name": "response_status",
+        "comment": "최초 HTTP 상태",
+        "dataType": "SMALLINT",
+        "default": "",
+        "options": 0
+      },
+      "t_idempotency_record__response_ciphertext": {
+        "id": "t_idempotency_record__response_ciphertext",
+        "tableId": "t_idempotency_record",
+        "name": "response_ciphertext",
+        "comment": "암호화 응답/쿠키 자료",
+        "dataType": "LONGBLOB",
+        "default": "",
+        "options": 0
+      },
+      "t_idempotency_record__created_at": {
+        "id": "t_idempotency_record__created_at",
+        "tableId": "t_idempotency_record",
+        "name": "created_at",
+        "comment": "요청 접수 시각",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 8
+      },
+      "t_idempotency_record__expires_at": {
+        "id": "t_idempotency_record__expires_at",
+        "tableId": "t_idempotency_record",
+        "name": "expires_at",
+        "comment": "24시간 후 만료",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 8
+      },
+      "t_auth_challenge__target_email_key": {
+        "id": "t_auth_challenge__target_email_key",
+        "tableId": "t_auth_challenge",
+        "name": "target_email_key",
+        "dataType": "VARCHAR(254)",
+        "options": 8,
+        "comment": "계정과 동일한 이메일 정규화",
+        "default": ""
+      },
+      "t_auth_proof__target_email_key": {
+        "id": "t_auth_proof__target_email_key",
+        "tableId": "t_auth_proof",
+        "name": "target_email_key",
+        "dataType": "VARCHAR(254)",
+        "options": 0,
+        "comment": "계정과 동일한 이메일 정규화",
+        "default": ""
+      },
+      "t_email_delivery__delivery_id": {
+        "id": "t_email_delivery__delivery_id",
+        "tableId": "t_email_delivery",
+        "name": "delivery_id",
+        "comment": "발송 작업 UUID",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 10
+      },
+      "t_email_delivery__challenge_id": {
+        "id": "t_email_delivery__challenge_id",
+        "tableId": "t_email_delivery",
+        "name": "challenge_id",
+        "comment": "같은 요청의 같은 링크 재시도",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 12
+      },
+      "t_email_delivery__member_id": {
+        "id": "t_email_delivery__member_id",
+        "tableId": "t_email_delivery",
+        "name": "member_id",
+        "comment": "가입 후 소유 회원 / 이전 이메일 포함",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 0
+      },
+      "t_email_delivery__status": {
+        "id": "t_email_delivery__status",
+        "tableId": "t_email_delivery",
+        "name": "status",
+        "comment": "PENDING/PROCESSING/ACCEPTED/FAILED/CANCELLED",
+        "dataType": "VARCHAR(20)",
+        "default": "'PENDING'",
+        "options": 8
+      },
+      "t_email_delivery__payload_ciphertext": {
+        "id": "t_email_delivery__payload_ciphertext",
+        "tableId": "t_email_delivery",
+        "name": "payload_ciphertext",
+        "comment": "재시도용 토큰·메일 암호문",
+        "dataType": "LONGBLOB",
+        "default": "",
+        "options": 0
+      },
+      "t_email_delivery__payload_key_id": {
+        "id": "t_email_delivery__payload_key_id",
+        "tableId": "t_email_delivery",
+        "name": "payload_key_id",
+        "comment": "암호화 키 버전 / 종료 시 제거",
+        "dataType": "VARCHAR(128)",
+        "default": "",
+        "options": 0
+      },
+      "t_email_delivery__payload_expires_at": {
+        "id": "t_email_delivery__payload_expires_at",
+        "tableId": "t_email_delivery",
+        "name": "payload_expires_at",
+        "comment": "인증 만료를 넘지 않음",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 8
+      },
+      "t_email_delivery__attempt_count": {
+        "id": "t_email_delivery__attempt_count",
+        "tableId": "t_email_delivery",
+        "name": "attempt_count",
+        "comment": "발송 시도 횟수",
+        "dataType": "INT",
+        "default": "0",
+        "options": 8
+      },
+      "t_email_delivery__next_attempt_at": {
+        "id": "t_email_delivery__next_attempt_at",
+        "tableId": "t_email_delivery",
+        "name": "next_attempt_at",
+        "comment": "다음 제한적 재시도",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 0
+      },
+      "t_email_delivery__lease_token": {
+        "id": "t_email_delivery__lease_token",
+        "tableId": "t_email_delivery",
+        "name": "lease_token",
+        "comment": "워커 소유권·늦은 저장 차단",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 0
+      },
+      "t_email_delivery__lease_until": {
+        "id": "t_email_delivery__lease_until",
+        "tableId": "t_email_delivery",
+        "name": "lease_until",
+        "comment": "장애 후 재점유 시각",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 0
+      },
+      "t_email_delivery__cancellation_requested_at": {
+        "id": "t_email_delivery__cancellation_requested_at",
+        "tableId": "t_email_delivery",
+        "name": "cancellation_requested_at",
+        "comment": "진행 중 발송 취소 요청",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 0
+      },
+      "t_email_delivery__last_error_code": {
+        "id": "t_email_delivery__last_error_code",
+        "tableId": "t_email_delivery",
+        "name": "last_error_code",
+        "comment": "개인정보 없는 오류 코드",
+        "dataType": "VARCHAR(64)",
+        "default": "",
+        "options": 0
+      },
+      "t_email_delivery__accepted_at": {
+        "id": "t_email_delivery__accepted_at",
+        "tableId": "t_email_delivery",
+        "name": "accepted_at",
+        "comment": "제공자 접수 확인",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 0
+      },
+      "t_email_delivery__finished_at": {
+        "id": "t_email_delivery__finished_at",
+        "tableId": "t_email_delivery",
+        "name": "finished_at",
+        "comment": "최종 처리 시각",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 0
+      },
+      "t_email_delivery__created_at": {
+        "id": "t_email_delivery__created_at",
+        "tableId": "t_email_delivery",
+        "name": "created_at",
+        "comment": "작업 생성",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 8
+      },
+      "t_email_delivery__updated_at": {
+        "id": "t_email_delivery__updated_at",
+        "tableId": "t_email_delivery",
+        "name": "updated_at",
+        "comment": "진행 갱신",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 8
+      },
+      "t_social_signup_context__proof_id": {
+        "id": "t_social_signup_context__proof_id",
+        "tableId": "t_social_signup_context",
+        "name": "proof_id",
+        "comment": "소셜 가입 증명 PK/FK",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 10
+      },
+      "t_social_signup_context__flow_id": {
+        "id": "t_social_signup_context__flow_id",
+        "tableId": "t_social_signup_context",
+        "name": "flow_id",
+        "comment": "원본 OAuth 흐름 FK",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 12
+      },
+      "t_social_signup_context__member_id": {
+        "id": "t_social_signup_context__member_id",
+        "tableId": "t_social_signup_context",
+        "name": "member_id",
+        "comment": "가입 완료 시 귀속 또는 즉시 삭제",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 0
+      },
+      "t_social_signup_context__provider": {
+        "id": "t_social_signup_context__provider",
+        "tableId": "t_social_signup_context",
+        "name": "provider",
+        "comment": "KAKAO",
+        "dataType": "VARCHAR(20)",
+        "default": "",
+        "options": 8
+      },
+      "t_social_signup_context__provider_subject": {
+        "id": "t_social_signup_context__provider_subject",
+        "tableId": "t_social_signup_context",
+        "name": "provider_subject",
+        "comment": "가입할 제공자 식별자",
+        "dataType": "VARCHAR(128)",
+        "default": "",
+        "options": 8
+      },
+      "t_social_signup_context__email": {
+        "id": "t_social_signup_context__email",
+        "tableId": "t_social_signup_context",
+        "name": "email",
+        "comment": "제공자 이메일",
+        "dataType": "VARCHAR(254)",
+        "default": "",
+        "options": 0
+      },
+      "t_social_signup_context__email_key": {
+        "id": "t_social_signup_context__email_key",
+        "tableId": "t_social_signup_context",
+        "name": "email_key",
+        "comment": "동일 정규화 이메일",
+        "dataType": "VARCHAR(254)",
+        "default": "",
+        "options": 0
+      },
+      "t_social_signup_context__email_verified": {
+        "id": "t_social_signup_context__email_verified",
+        "tableId": "t_social_signup_context",
+        "name": "email_verified",
+        "comment": "제공자 이메일 검증 상태",
+        "dataType": "BOOLEAN",
+        "default": "",
+        "options": 8
+      },
+      "t_social_signup_context__nickname_suggestion": {
+        "id": "t_social_signup_context__nickname_suggestion",
+        "tableId": "t_social_signup_context",
+        "name": "nickname_suggestion",
+        "comment": "닉네임 후보 / 가입 시 재검증",
+        "dataType": "VARCHAR(255)",
+        "default": "",
+        "options": 0
+      },
+      "t_social_signup_context__created_at": {
+        "id": "t_social_signup_context__created_at",
+        "tableId": "t_social_signup_context",
+        "name": "created_at",
+        "comment": "컨텍스트 생성",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 8
+      },
+      "t_withdrawal_operation__operation_id": {
+        "id": "t_withdrawal_operation__operation_id",
+        "tableId": "t_withdrawal_operation",
+        "name": "operation_id",
+        "comment": "일시적 탈퇴 작업 UUID",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 10
+      },
+      "t_withdrawal_operation__member_id": {
+        "id": "t_withdrawal_operation__member_id",
+        "tableId": "t_withdrawal_operation",
+        "name": "member_id",
+        "comment": "완료 전 회원 삭제 금지",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 12
+      },
+      "t_withdrawal_operation__status": {
+        "id": "t_withdrawal_operation__status",
+        "tableId": "t_withdrawal_operation",
+        "name": "status",
+        "comment": "PENDING/PROCESSING/RETRY_WAIT",
+        "dataType": "VARCHAR(20)",
+        "default": "'PENDING'",
+        "options": 8
+      },
+      "t_withdrawal_operation__current_stage": {
+        "id": "t_withdrawal_operation__current_stage",
+        "tableId": "t_withdrawal_operation",
+        "name": "current_stage",
+        "comment": "CAPTURE/QUIESCE/ANONYMIZE/PURGE/FINALIZE",
+        "dataType": "VARCHAR(40)",
+        "default": "",
+        "options": 8
+      },
+      "t_withdrawal_operation__retry_count": {
+        "id": "t_withdrawal_operation__retry_count",
+        "tableId": "t_withdrawal_operation",
+        "name": "retry_count",
+        "comment": "재시도 횟수",
+        "dataType": "INT",
+        "default": "0",
+        "options": 8
+      },
+      "t_withdrawal_operation__next_attempt_at": {
+        "id": "t_withdrawal_operation__next_attempt_at",
+        "tableId": "t_withdrawal_operation",
+        "name": "next_attempt_at",
+        "comment": "다음 시도 시각",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 0
+      },
+      "t_withdrawal_operation__last_error_code": {
+        "id": "t_withdrawal_operation__last_error_code",
+        "tableId": "t_withdrawal_operation",
+        "name": "last_error_code",
+        "comment": "개인정보 없는 오류 코드",
+        "dataType": "VARCHAR(64)",
+        "default": "",
+        "options": 0
+      },
+      "t_withdrawal_operation__lease_token": {
+        "id": "t_withdrawal_operation__lease_token",
+        "tableId": "t_withdrawal_operation",
+        "name": "lease_token",
+        "comment": "작업 점유·최종 저장 검사",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 0
+      },
+      "t_withdrawal_operation__lease_until": {
+        "id": "t_withdrawal_operation__lease_until",
+        "tableId": "t_withdrawal_operation",
+        "name": "lease_until",
+        "comment": "재시작 후 재점유 가능 시각",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 0
+      },
+      "t_withdrawal_operation__created_at": {
+        "id": "t_withdrawal_operation__created_at",
+        "tableId": "t_withdrawal_operation",
+        "name": "created_at",
+        "comment": "접수 시각",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 8
+      },
+      "t_withdrawal_operation__updated_at": {
+        "id": "t_withdrawal_operation__updated_at",
+        "tableId": "t_withdrawal_operation",
+        "name": "updated_at",
+        "comment": "진행 갱신",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 8
+      },
+      "t_withdrawal_target__target_id": {
+        "id": "t_withdrawal_target__target_id",
+        "tableId": "t_withdrawal_target",
+        "name": "target_id",
+        "comment": "삭제 대상 UUID",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 10
+      },
+      "t_withdrawal_target__operation_id": {
+        "id": "t_withdrawal_target__operation_id",
+        "tableId": "t_withdrawal_target",
+        "name": "operation_id",
+        "comment": "탈퇴 작업 FK",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 8
+      },
+      "t_withdrawal_target__resource_type": {
+        "id": "t_withdrawal_target__resource_type",
+        "tableId": "t_withdrawal_target",
+        "name": "resource_type",
+        "comment": "FILE/CACHE/INDEX/DB/WIKI/KEY",
+        "dataType": "VARCHAR(32)",
+        "default": "",
+        "options": 8
+      },
+      "t_withdrawal_target__locator_ciphertext": {
+        "id": "t_withdrawal_target__locator_ciphertext",
+        "tableId": "t_withdrawal_target",
+        "name": "locator_ciphertext",
+        "comment": "파일 키·삭제 범위 암호문",
+        "dataType": "LONGBLOB",
+        "default": "",
+        "options": 8
+      },
+      "t_withdrawal_target__locator_key_id": {
+        "id": "t_withdrawal_target__locator_key_id",
+        "tableId": "t_withdrawal_target",
+        "name": "locator_key_id",
+        "comment": "작업용 암호화 키 버전",
+        "dataType": "VARCHAR(128)",
+        "default": "",
+        "options": 8
+      },
+      "t_withdrawal_target__status": {
+        "id": "t_withdrawal_target__status",
+        "tableId": "t_withdrawal_target",
+        "name": "status",
+        "comment": "PENDING/DONE",
+        "dataType": "VARCHAR(20)",
+        "default": "'PENDING'",
+        "options": 8
+      },
+      "t_withdrawal_target__completed_at": {
+        "id": "t_withdrawal_target__completed_at",
+        "tableId": "t_withdrawal_target",
+        "name": "completed_at",
+        "comment": "대상 정리 완료",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 0
+      },
+      "t_withdrawal_target__created_at": {
+        "id": "t_withdrawal_target__created_at",
+        "tableId": "t_withdrawal_target",
+        "name": "created_at",
+        "comment": "대상 확보 시각",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 8
+      }
+    },
+    "relationshipEntities": {
+      "r_account__member_id": {
+        "id": "r_account__member_id",
+        "relationshipType": 8,
+        "onDelete": 4,
+        "onUpdate": 32,
+        "start": {
+          "tableId": "t_member",
+          "columnIds": [
+            "t_member__member_id"
+          ]
+        },
+        "end": {
+          "tableId": "t_account",
+          "columnIds": [
+            "t_account__member_id"
+          ]
+        }
+      },
+      "r_password_credential__member_id": {
+        "id": "r_password_credential__member_id",
+        "relationshipType": 2,
+        "onDelete": 4,
+        "onUpdate": 32,
+        "start": {
+          "tableId": "t_account",
+          "columnIds": [
+            "t_account__member_id"
+          ]
+        },
+        "end": {
+          "tableId": "t_password_credential",
+          "columnIds": [
+            "t_password_credential__member_id"
+          ]
+        }
+      },
+      "r_social_identity__member_id": {
+        "id": "r_social_identity__member_id",
+        "relationshipType": 4,
+        "onDelete": 4,
+        "onUpdate": 32,
+        "start": {
+          "tableId": "t_account",
+          "columnIds": [
+            "t_account__member_id"
+          ]
+        },
+        "end": {
+          "tableId": "t_social_identity",
+          "columnIds": [
+            "t_social_identity__member_id"
+          ]
+        }
+      },
+      "r_auth_session__member_id": {
+        "id": "r_auth_session__member_id",
+        "relationshipType": 4,
+        "onDelete": 4,
+        "onUpdate": 32,
+        "start": {
+          "tableId": "t_account",
+          "columnIds": [
+            "t_account__member_id"
+          ]
+        },
+        "end": {
+          "tableId": "t_auth_session",
+          "columnIds": [
+            "t_auth_session__member_id"
+          ]
+        }
+      },
+      "r_refresh_token__session_id": {
+        "id": "r_refresh_token__session_id",
+        "relationshipType": 4,
+        "onDelete": 4,
+        "onUpdate": 32,
+        "start": {
+          "tableId": "t_auth_session",
+          "columnIds": [
+            "t_auth_session__session_id"
+          ]
+        },
+        "end": {
+          "tableId": "t_refresh_token",
+          "columnIds": [
+            "t_refresh_token__session_id"
+          ]
+        }
+      },
+      "r_refresh_token__replaced_by_token_id": {
+        "id": "r_refresh_token__replaced_by_token_id",
+        "relationshipType": 2,
+        "onDelete": 8,
+        "onUpdate": 32,
+        "start": {
+          "tableId": "t_refresh_token",
+          "columnIds": [
+            "t_refresh_token__refresh_token_id"
+          ]
+        },
+        "end": {
+          "tableId": "t_refresh_token",
+          "columnIds": [
+            "t_refresh_token__replaced_by_token_id"
+          ]
+        }
+      },
+      "r_member_consent__member_id": {
+        "id": "r_member_consent__member_id",
+        "relationshipType": 4,
+        "onDelete": 4,
+        "onUpdate": 32,
+        "start": {
+          "tableId": "t_member",
+          "columnIds": [
+            "t_member__member_id"
+          ]
+        },
+        "end": {
+          "tableId": "t_member_consent",
+          "columnIds": [
+            "t_member_consent__member_id"
+          ]
+        }
+      },
+      "r_term_version__term_id": {
+        "id": "r_term_version__term_id",
+        "relationshipType": 4,
+        "onDelete": 32,
+        "onUpdate": 32,
+        "start": {
+          "tableId": "t_term",
+          "columnIds": [
+            "t_term__term_id"
+          ]
+        },
+        "end": {
+          "tableId": "t_term_version",
+          "columnIds": [
+            "t_term_version__term_id"
+          ]
+        }
+      },
+      "r_member_consent__term_version_id": {
+        "id": "r_member_consent__term_version_id",
+        "relationshipType": 4,
+        "onDelete": 32,
+        "onUpdate": 32,
+        "start": {
+          "tableId": "t_term_version",
+          "columnIds": [
+            "t_term_version__term_version_id"
+          ]
+        },
+        "end": {
+          "tableId": "t_member_consent",
+          "columnIds": [
+            "t_member_consent__term_version_id"
+          ]
+        }
+      },
+      "r_auth_challenge__member_id": {
+        "id": "r_auth_challenge__member_id",
+        "relationshipType": 4,
+        "onDelete": 32,
+        "onUpdate": 32,
+        "start": {
+          "tableId": "t_account",
+          "columnIds": [
+            "t_account__member_id"
+          ]
+        },
+        "end": {
+          "tableId": "t_auth_challenge",
+          "columnIds": [
+            "t_auth_challenge__member_id"
+          ]
+        }
+      },
+      "r_auth_challenge__session_id": {
+        "id": "r_auth_challenge__session_id",
+        "relationshipType": 4,
+        "onDelete": 32,
+        "onUpdate": 32,
+        "start": {
+          "tableId": "t_auth_session",
+          "columnIds": [
+            "t_auth_session__session_id"
+          ]
+        },
+        "end": {
+          "tableId": "t_auth_challenge",
+          "columnIds": [
+            "t_auth_challenge__session_id"
+          ]
+        }
+      },
+      "r_auth_proof__member_id": {
+        "id": "r_auth_proof__member_id",
+        "relationshipType": 4,
+        "onDelete": 32,
+        "onUpdate": 32,
+        "start": {
+          "tableId": "t_account",
+          "columnIds": [
+            "t_account__member_id"
+          ]
+        },
+        "end": {
+          "tableId": "t_auth_proof",
+          "columnIds": [
+            "t_auth_proof__member_id"
+          ]
+        }
+      },
+      "r_auth_proof__session_id": {
+        "id": "r_auth_proof__session_id",
+        "relationshipType": 4,
+        "onDelete": 32,
+        "onUpdate": 32,
+        "start": {
+          "tableId": "t_auth_session",
+          "columnIds": [
+            "t_auth_session__session_id"
+          ]
+        },
+        "end": {
+          "tableId": "t_auth_proof",
+          "columnIds": [
+            "t_auth_proof__session_id"
+          ]
+        }
+      },
+      "r_oauth_flow__member_id": {
+        "id": "r_oauth_flow__member_id",
+        "relationshipType": 4,
+        "onDelete": 32,
+        "onUpdate": 32,
+        "start": {
+          "tableId": "t_account",
+          "columnIds": [
+            "t_account__member_id"
+          ]
+        },
+        "end": {
+          "tableId": "t_oauth_flow",
+          "columnIds": [
+            "t_oauth_flow__member_id"
+          ]
+        }
+      },
+      "r_oauth_flow__session_id": {
+        "id": "r_oauth_flow__session_id",
+        "relationshipType": 4,
+        "onDelete": 32,
+        "onUpdate": 32,
+        "start": {
+          "tableId": "t_auth_session",
+          "columnIds": [
+            "t_auth_session__session_id"
+          ]
+        },
+        "end": {
+          "tableId": "t_oauth_flow",
+          "columnIds": [
+            "t_oauth_flow__session_id"
+          ]
+        }
+      },
+      "r_auth_proof__challenge_id": {
+        "id": "r_auth_proof__challenge_id",
+        "relationshipType": 2,
+        "onDelete": 32,
+        "onUpdate": 32,
+        "start": {
+          "tableId": "t_auth_challenge",
+          "columnIds": [
+            "t_auth_challenge__challenge_id"
+          ]
+        },
+        "end": {
+          "tableId": "t_auth_proof",
+          "columnIds": [
+            "t_auth_proof__challenge_id"
+          ]
+        }
+      },
+      "r_oauth_flow__reauth_proof_id": {
+        "id": "r_oauth_flow__reauth_proof_id",
+        "relationshipType": 4,
+        "onDelete": 32,
+        "onUpdate": 32,
+        "start": {
+          "tableId": "t_auth_proof",
+          "columnIds": [
+            "t_auth_proof__proof_id"
+          ]
+        },
+        "end": {
+          "tableId": "t_oauth_flow",
+          "columnIds": [
+            "t_oauth_flow__reauth_proof_id"
+          ]
+        }
+      },
+      "r_idempotency_record__member_id": {
+        "id": "r_idempotency_record__member_id",
+        "relationshipType": 4,
+        "onDelete": 4,
+        "onUpdate": 32,
+        "start": {
+          "tableId": "t_member",
+          "columnIds": [
+            "t_member__member_id"
+          ]
+        },
+        "end": {
+          "tableId": "t_idempotency_record",
+          "columnIds": [
+            "t_idempotency_record__member_id"
+          ]
+        }
+      },
+      "r_email_delivery__challenge_id": {
+        "id": "r_email_delivery__challenge_id",
+        "relationshipType": 2,
+        "onDelete": 32,
+        "onUpdate": 32,
+        "start": {
+          "tableId": "t_auth_challenge",
+          "columnIds": [
+            "t_auth_challenge__challenge_id"
+          ]
+        },
+        "end": {
+          "tableId": "t_email_delivery",
+          "columnIds": [
+            "t_email_delivery__challenge_id"
+          ]
+        }
+      },
+      "r_email_delivery__member_id": {
+        "id": "r_email_delivery__member_id",
+        "relationshipType": 4,
+        "onDelete": 32,
+        "onUpdate": 32,
+        "start": {
+          "tableId": "t_member",
+          "columnIds": [
+            "t_member__member_id"
+          ]
+        },
+        "end": {
+          "tableId": "t_email_delivery",
+          "columnIds": [
+            "t_email_delivery__member_id"
+          ]
+        }
+      },
+      "r_social_signup_context__proof_id": {
+        "id": "r_social_signup_context__proof_id",
+        "relationshipType": 2,
+        "onDelete": 32,
+        "onUpdate": 32,
+        "start": {
+          "tableId": "t_auth_proof",
+          "columnIds": [
+            "t_auth_proof__proof_id"
+          ]
+        },
+        "end": {
+          "tableId": "t_social_signup_context",
+          "columnIds": [
+            "t_social_signup_context__proof_id"
+          ]
+        }
+      },
+      "r_social_signup_context__flow_id": {
+        "id": "r_social_signup_context__flow_id",
+        "relationshipType": 2,
+        "onDelete": 32,
+        "onUpdate": 32,
+        "start": {
+          "tableId": "t_oauth_flow",
+          "columnIds": [
+            "t_oauth_flow__flow_id"
+          ]
+        },
+        "end": {
+          "tableId": "t_social_signup_context",
+          "columnIds": [
+            "t_social_signup_context__flow_id"
+          ]
+        }
+      },
+      "r_social_signup_context__member_id": {
+        "id": "r_social_signup_context__member_id",
+        "relationshipType": 4,
+        "onDelete": 32,
+        "onUpdate": 32,
+        "start": {
+          "tableId": "t_member",
+          "columnIds": [
+            "t_member__member_id"
+          ]
+        },
+        "end": {
+          "tableId": "t_social_signup_context",
+          "columnIds": [
+            "t_social_signup_context__member_id"
+          ]
+        }
+      },
+      "r_withdrawal_operation__member_id": {
+        "id": "r_withdrawal_operation__member_id",
+        "relationshipType": 2,
+        "onDelete": 32,
+        "onUpdate": 32,
+        "start": {
+          "tableId": "t_member",
+          "columnIds": [
+            "t_member__member_id"
+          ]
+        },
+        "end": {
+          "tableId": "t_withdrawal_operation",
+          "columnIds": [
+            "t_withdrawal_operation__member_id"
+          ]
+        }
+      },
+      "r_withdrawal_target__operation_id": {
+        "id": "r_withdrawal_target__operation_id",
+        "relationshipType": 4,
+        "onDelete": 4,
+        "onUpdate": 32,
+        "start": {
+          "tableId": "t_withdrawal_operation",
+          "columnIds": [
+            "t_withdrawal_operation__operation_id"
+          ]
+        },
+        "end": {
+          "tableId": "t_withdrawal_target",
+          "columnIds": [
+            "t_withdrawal_target__operation_id"
+          ]
+        }
+      }
+    },
+    "indexEntities": {
+      "ix_uq_social_provider_subject": {
+        "id": "ix_uq_social_provider_subject",
+        "name": "uq_social_provider_subject",
+        "tableId": "t_social_identity",
+        "indexColumnIds": [
+          "ix_uq_social_provider_subject_0",
+          "ix_uq_social_provider_subject_1"
+        ],
+        "unique": true
+      },
+      "ix_uq_social_member_provider": {
+        "id": "ix_uq_social_member_provider",
+        "name": "uq_social_member_provider",
+        "tableId": "t_social_identity",
+        "indexColumnIds": [
+          "ix_uq_social_member_provider_0",
+          "ix_uq_social_member_provider_1"
+        ],
+        "unique": true
+      },
+      "ix_uq_term_version": {
+        "id": "ix_uq_term_version",
+        "name": "uq_term_version",
+        "tableId": "t_term_version",
+        "indexColumnIds": [
+          "ix_uq_term_version_0",
+          "ix_uq_term_version_1"
+        ],
+        "unique": true
+      },
+      "ix_ix_consent_latest": {
+        "id": "ix_ix_consent_latest",
+        "name": "ix_consent_latest",
+        "tableId": "t_member_consent",
+        "indexColumnIds": [
+          "ix_ix_consent_latest_0",
+          "ix_ix_consent_latest_1",
+          "ix_ix_consent_latest_2",
+          "ix_ix_consent_latest_3"
+        ],
+        "unique": false
+      },
+      "ix_ix_session_member": {
+        "id": "ix_ix_session_member",
+        "name": "ix_session_member",
+        "tableId": "t_auth_session",
+        "indexColumnIds": [
+          "ix_ix_session_member_0",
+          "ix_ix_session_member_1"
+        ],
+        "unique": false
+      },
+      "ix_ix_refresh_session": {
+        "id": "ix_ix_refresh_session",
+        "name": "ix_refresh_session",
+        "tableId": "t_refresh_token",
+        "indexColumnIds": [
+          "ix_ix_refresh_session_0",
+          "ix_ix_refresh_session_1"
+        ],
+        "unique": false
+      },
+      "ix_ix_challenge_target": {
+        "id": "ix_ix_challenge_target",
+        "name": "ix_challenge_target",
+        "tableId": "t_auth_challenge",
+        "indexColumnIds": [
+          "ix_ix_challenge_target_0",
+          "ix_ix_challenge_target_1",
+          "ix_ix_challenge_target_2"
+        ],
+        "unique": false
+      },
+      "ix_ix_proof_challenge": {
+        "id": "ix_ix_proof_challenge",
+        "name": "ix_proof_challenge",
+        "tableId": "t_auth_proof",
+        "indexColumnIds": [
+          "ix_ix_proof_challenge_0",
+          "ix_ix_proof_challenge_1"
+        ],
+        "unique": false
+      },
+      "ix_uq_idempotency_request": {
+        "id": "ix_uq_idempotency_request",
+        "name": "uq_idempotency_request",
+        "tableId": "t_idempotency_record",
+        "indexColumnIds": [
+          "ix_uq_idempotency_request_0",
+          "ix_uq_idempotency_request_1",
+          "ix_uq_idempotency_request_2",
+          "ix_uq_idempotency_request_3"
+        ],
+        "unique": true
+      },
+      "ix_ix_auth_session_expiry": {
+        "id": "ix_ix_auth_session_expiry",
+        "name": "ix_auth_session_expiry",
+        "tableId": "t_auth_session",
+        "indexColumnIds": [
+          "ix_ix_auth_session_expiry_0"
+        ],
+        "unique": false
+      },
+      "ix_ix_refresh_token_expiry": {
+        "id": "ix_ix_refresh_token_expiry",
+        "name": "ix_refresh_token_expiry",
+        "tableId": "t_refresh_token",
+        "indexColumnIds": [
+          "ix_ix_refresh_token_expiry_0"
+        ],
+        "unique": false
+      },
+      "ix_ix_auth_challenge_expiry": {
+        "id": "ix_ix_auth_challenge_expiry",
+        "name": "ix_auth_challenge_expiry",
+        "tableId": "t_auth_challenge",
+        "indexColumnIds": [
+          "ix_ix_auth_challenge_expiry_0"
+        ],
+        "unique": false
+      },
+      "ix_ix_auth_proof_expiry": {
+        "id": "ix_ix_auth_proof_expiry",
+        "name": "ix_auth_proof_expiry",
+        "tableId": "t_auth_proof",
+        "indexColumnIds": [
+          "ix_ix_auth_proof_expiry_0"
+        ],
+        "unique": false
+      },
+      "ix_ix_oauth_flow_expiry": {
+        "id": "ix_ix_oauth_flow_expiry",
+        "name": "ix_oauth_flow_expiry",
+        "tableId": "t_oauth_flow",
+        "indexColumnIds": [
+          "ix_ix_oauth_flow_expiry_0"
+        ],
+        "unique": false
+      },
+      "ix_ix_idempotency_record_expiry": {
+        "id": "ix_ix_idempotency_record_expiry",
+        "name": "ix_idempotency_record_expiry",
+        "tableId": "t_idempotency_record",
+        "indexColumnIds": [
+          "ix_ix_idempotency_record_expiry_0"
+        ],
+        "unique": false
+      },
+      "ix_ix_challenge_digest": {
+        "id": "ix_ix_challenge_digest",
+        "name": "ix_challenge_digest",
+        "tableId": "t_auth_challenge",
+        "indexColumnIds": [
+          "ix_ix_challenge_digest_0"
+        ],
+        "unique": false
+      },
+      "ix_ix_auth_challenge_owner": {
+        "id": "ix_ix_auth_challenge_owner",
+        "name": "ix_auth_challenge_owner",
+        "tableId": "t_auth_challenge",
+        "indexColumnIds": [
+          "ix_ix_auth_challenge_owner_0"
+        ],
+        "unique": false
+      },
+      "ix_ix_auth_proof_owner": {
+        "id": "ix_ix_auth_proof_owner",
+        "name": "ix_auth_proof_owner",
+        "tableId": "t_auth_proof",
+        "indexColumnIds": [
+          "ix_ix_auth_proof_owner_0"
+        ],
+        "unique": false
+      },
+      "ix_ix_oauth_flow_owner": {
+        "id": "ix_ix_oauth_flow_owner",
+        "name": "ix_oauth_flow_owner",
+        "tableId": "t_oauth_flow",
+        "indexColumnIds": [
+          "ix_ix_oauth_flow_owner_0"
+        ],
+        "unique": false
+      },
+      "ix_ix_idempotency_record_owner": {
+        "id": "ix_ix_idempotency_record_owner",
+        "name": "ix_idempotency_record_owner",
+        "tableId": "t_idempotency_record",
+        "indexColumnIds": [
+          "ix_ix_idempotency_record_owner_0"
+        ],
+        "unique": false
+      },
+      "ix_ix_delivery_ready": {
+        "id": "ix_ix_delivery_ready",
+        "name": "ix_delivery_ready",
+        "tableId": "t_email_delivery",
+        "indexColumnIds": [
+          "ix_ix_delivery_ready_0",
+          "ix_ix_delivery_ready_1",
+          "ix_ix_delivery_ready_2"
+        ],
+        "unique": false
+      },
+      "ix_ix_delivery_expiry": {
+        "id": "ix_ix_delivery_expiry",
+        "name": "ix_delivery_expiry",
+        "tableId": "t_email_delivery",
+        "indexColumnIds": [
+          "ix_ix_delivery_expiry_0"
+        ],
+        "unique": false
+      },
+      "ix_ix_delivery_owner": {
+        "id": "ix_ix_delivery_owner",
+        "name": "ix_delivery_owner",
+        "tableId": "t_email_delivery",
+        "indexColumnIds": [
+          "ix_ix_delivery_owner_0"
+        ],
+        "unique": false
+      },
+      "ix_ix_context_owner": {
+        "id": "ix_ix_context_owner",
+        "name": "ix_context_owner",
+        "tableId": "t_social_signup_context",
+        "indexColumnIds": [
+          "ix_ix_context_owner_0"
+        ],
+        "unique": false
+      },
+      "ix_ix_withdrawal_ready": {
+        "id": "ix_ix_withdrawal_ready",
+        "name": "ix_withdrawal_ready",
+        "tableId": "t_withdrawal_operation",
+        "indexColumnIds": [
+          "ix_ix_withdrawal_ready_0",
+          "ix_ix_withdrawal_ready_1",
+          "ix_ix_withdrawal_ready_2"
+        ],
+        "unique": false
+      },
+      "ix_ix_withdrawal_target_pending": {
+        "id": "ix_ix_withdrawal_target_pending",
+        "name": "ix_withdrawal_target_pending",
+        "tableId": "t_withdrawal_target",
+        "indexColumnIds": [
+          "ix_ix_withdrawal_target_pending_0",
+          "ix_ix_withdrawal_target_pending_1"
+        ],
+        "unique": false
+      }
+    },
+    "indexColumnEntities": {
+      "ix_uq_social_provider_subject_0": {
+        "id": "ix_uq_social_provider_subject_0",
+        "indexId": "ix_uq_social_provider_subject",
+        "columnId": "t_social_identity__provider",
+        "orderType": 1
+      },
+      "ix_uq_social_provider_subject_1": {
+        "id": "ix_uq_social_provider_subject_1",
+        "indexId": "ix_uq_social_provider_subject",
+        "columnId": "t_social_identity__provider_subject",
+        "orderType": 1
+      },
+      "ix_uq_social_member_provider_0": {
+        "id": "ix_uq_social_member_provider_0",
+        "indexId": "ix_uq_social_member_provider",
+        "columnId": "t_social_identity__member_id",
+        "orderType": 1
+      },
+      "ix_uq_social_member_provider_1": {
+        "id": "ix_uq_social_member_provider_1",
+        "indexId": "ix_uq_social_member_provider",
+        "columnId": "t_social_identity__provider",
+        "orderType": 1
+      },
+      "ix_uq_term_version_0": {
+        "id": "ix_uq_term_version_0",
+        "indexId": "ix_uq_term_version",
+        "columnId": "t_term_version__term_id",
+        "orderType": 1
+      },
+      "ix_uq_term_version_1": {
+        "id": "ix_uq_term_version_1",
+        "indexId": "ix_uq_term_version",
+        "columnId": "t_term_version__version",
+        "orderType": 1
+      },
+      "ix_ix_consent_latest_0": {
+        "id": "ix_ix_consent_latest_0",
+        "indexId": "ix_ix_consent_latest",
+        "columnId": "t_member_consent__member_id",
+        "orderType": 1
+      },
+      "ix_ix_consent_latest_1": {
+        "id": "ix_ix_consent_latest_1",
+        "indexId": "ix_ix_consent_latest",
+        "columnId": "t_member_consent__term_version_id",
+        "orderType": 1
+      },
+      "ix_ix_consent_latest_2": {
+        "id": "ix_ix_consent_latest_2",
+        "indexId": "ix_ix_consent_latest",
+        "columnId": "t_member_consent__agreed_at",
+        "orderType": 1
+      },
+      "ix_ix_consent_latest_3": {
+        "id": "ix_ix_consent_latest_3",
+        "indexId": "ix_ix_consent_latest",
+        "columnId": "t_member_consent__consent_id",
+        "orderType": 1
+      },
+      "ix_ix_session_member_0": {
+        "id": "ix_ix_session_member_0",
+        "indexId": "ix_ix_session_member",
+        "columnId": "t_auth_session__member_id",
+        "orderType": 1
+      },
+      "ix_ix_session_member_1": {
+        "id": "ix_ix_session_member_1",
+        "indexId": "ix_ix_session_member",
+        "columnId": "t_auth_session__revoked_at",
+        "orderType": 1
+      },
+      "ix_ix_refresh_session_0": {
+        "id": "ix_ix_refresh_session_0",
+        "indexId": "ix_ix_refresh_session",
+        "columnId": "t_refresh_token__session_id",
+        "orderType": 1
+      },
+      "ix_ix_refresh_session_1": {
+        "id": "ix_ix_refresh_session_1",
+        "indexId": "ix_ix_refresh_session",
+        "columnId": "t_refresh_token__expires_at",
+        "orderType": 1
+      },
+      "ix_ix_challenge_target_0": {
+        "id": "ix_ix_challenge_target_0",
+        "indexId": "ix_ix_challenge_target",
+        "columnId": "t_auth_challenge__target_email_key",
+        "orderType": 1
+      },
+      "ix_ix_challenge_target_1": {
+        "id": "ix_ix_challenge_target_1",
+        "indexId": "ix_ix_challenge_target",
+        "columnId": "t_auth_challenge__purpose",
+        "orderType": 1
+      },
+      "ix_ix_challenge_target_2": {
+        "id": "ix_ix_challenge_target_2",
+        "indexId": "ix_ix_challenge_target",
+        "columnId": "t_auth_challenge__created_at",
+        "orderType": 1
+      },
+      "ix_ix_proof_challenge_0": {
+        "id": "ix_ix_proof_challenge_0",
+        "indexId": "ix_ix_proof_challenge",
+        "columnId": "t_auth_proof__challenge_id",
+        "orderType": 1
+      },
+      "ix_ix_proof_challenge_1": {
+        "id": "ix_ix_proof_challenge_1",
+        "indexId": "ix_ix_proof_challenge",
+        "columnId": "t_auth_proof__invalidated_at",
+        "orderType": 1
+      },
+      "ix_uq_idempotency_request_0": {
+        "id": "ix_uq_idempotency_request_0",
+        "indexId": "ix_uq_idempotency_request",
+        "columnId": "t_idempotency_record__scope_key",
+        "orderType": 1
+      },
+      "ix_uq_idempotency_request_1": {
+        "id": "ix_uq_idempotency_request_1",
+        "indexId": "ix_uq_idempotency_request",
+        "columnId": "t_idempotency_record__http_method",
+        "orderType": 1
+      },
+      "ix_uq_idempotency_request_2": {
+        "id": "ix_uq_idempotency_request_2",
+        "indexId": "ix_uq_idempotency_request",
+        "columnId": "t_idempotency_record__request_path",
+        "orderType": 1
+      },
+      "ix_uq_idempotency_request_3": {
+        "id": "ix_uq_idempotency_request_3",
+        "indexId": "ix_uq_idempotency_request",
+        "columnId": "t_idempotency_record__idempotency_key",
+        "orderType": 1
+      },
+      "ix_ix_auth_session_expiry_0": {
+        "id": "ix_ix_auth_session_expiry_0",
+        "indexId": "ix_ix_auth_session_expiry",
+        "columnId": "t_auth_session__expires_at",
+        "orderType": 1
+      },
+      "ix_ix_refresh_token_expiry_0": {
+        "id": "ix_ix_refresh_token_expiry_0",
+        "indexId": "ix_ix_refresh_token_expiry",
+        "columnId": "t_refresh_token__expires_at",
+        "orderType": 1
+      },
+      "ix_ix_auth_challenge_expiry_0": {
+        "id": "ix_ix_auth_challenge_expiry_0",
+        "indexId": "ix_ix_auth_challenge_expiry",
+        "columnId": "t_auth_challenge__expires_at",
+        "orderType": 1
+      },
+      "ix_ix_auth_proof_expiry_0": {
+        "id": "ix_ix_auth_proof_expiry_0",
+        "indexId": "ix_ix_auth_proof_expiry",
+        "columnId": "t_auth_proof__expires_at",
+        "orderType": 1
+      },
+      "ix_ix_oauth_flow_expiry_0": {
+        "id": "ix_ix_oauth_flow_expiry_0",
+        "indexId": "ix_ix_oauth_flow_expiry",
+        "columnId": "t_oauth_flow__expires_at",
+        "orderType": 1
+      },
+      "ix_ix_idempotency_record_expiry_0": {
+        "id": "ix_ix_idempotency_record_expiry_0",
+        "indexId": "ix_ix_idempotency_record_expiry",
+        "columnId": "t_idempotency_record__expires_at",
+        "orderType": 1
+      },
+      "ix_ix_challenge_digest_0": {
+        "id": "ix_ix_challenge_digest_0",
+        "indexId": "ix_ix_challenge_digest",
+        "columnId": "t_auth_challenge__secret_digest",
+        "orderType": 1
+      },
+      "ix_ix_auth_challenge_owner_0": {
+        "id": "ix_ix_auth_challenge_owner_0",
+        "indexId": "ix_ix_auth_challenge_owner",
+        "columnId": "t_auth_challenge__member_id",
+        "orderType": 1
+      },
+      "ix_ix_auth_proof_owner_0": {
+        "id": "ix_ix_auth_proof_owner_0",
+        "indexId": "ix_ix_auth_proof_owner",
+        "columnId": "t_auth_proof__member_id",
+        "orderType": 1
+      },
+      "ix_ix_oauth_flow_owner_0": {
+        "id": "ix_ix_oauth_flow_owner_0",
+        "indexId": "ix_ix_oauth_flow_owner",
+        "columnId": "t_oauth_flow__member_id",
+        "orderType": 1
+      },
+      "ix_ix_idempotency_record_owner_0": {
+        "id": "ix_ix_idempotency_record_owner_0",
+        "indexId": "ix_ix_idempotency_record_owner",
+        "columnId": "t_idempotency_record__member_id",
+        "orderType": 1
+      },
+      "ix_ix_delivery_ready_0": {
+        "id": "ix_ix_delivery_ready_0",
+        "indexId": "ix_ix_delivery_ready",
+        "columnId": "t_email_delivery__status",
+        "orderType": 1
+      },
+      "ix_ix_delivery_ready_1": {
+        "id": "ix_ix_delivery_ready_1",
+        "indexId": "ix_ix_delivery_ready",
+        "columnId": "t_email_delivery__next_attempt_at",
+        "orderType": 1
+      },
+      "ix_ix_delivery_ready_2": {
+        "id": "ix_ix_delivery_ready_2",
+        "indexId": "ix_ix_delivery_ready",
+        "columnId": "t_email_delivery__lease_until",
+        "orderType": 1
+      },
+      "ix_ix_delivery_expiry_0": {
+        "id": "ix_ix_delivery_expiry_0",
+        "indexId": "ix_ix_delivery_expiry",
+        "columnId": "t_email_delivery__payload_expires_at",
+        "orderType": 1
+      },
+      "ix_ix_delivery_owner_0": {
+        "id": "ix_ix_delivery_owner_0",
+        "indexId": "ix_ix_delivery_owner",
+        "columnId": "t_email_delivery__member_id",
+        "orderType": 1
+      },
+      "ix_ix_context_owner_0": {
+        "id": "ix_ix_context_owner_0",
+        "indexId": "ix_ix_context_owner",
+        "columnId": "t_social_signup_context__member_id",
+        "orderType": 1
+      },
+      "ix_ix_withdrawal_ready_0": {
+        "id": "ix_ix_withdrawal_ready_0",
+        "indexId": "ix_ix_withdrawal_ready",
+        "columnId": "t_withdrawal_operation__status",
+        "orderType": 1
+      },
+      "ix_ix_withdrawal_ready_1": {
+        "id": "ix_ix_withdrawal_ready_1",
+        "indexId": "ix_ix_withdrawal_ready",
+        "columnId": "t_withdrawal_operation__next_attempt_at",
+        "orderType": 1
+      },
+      "ix_ix_withdrawal_ready_2": {
+        "id": "ix_ix_withdrawal_ready_2",
+        "indexId": "ix_ix_withdrawal_ready",
+        "columnId": "t_withdrawal_operation__lease_until",
+        "orderType": 1
+      },
+      "ix_ix_withdrawal_target_pending_0": {
+        "id": "ix_ix_withdrawal_target_pending_0",
+        "indexId": "ix_ix_withdrawal_target_pending",
+        "columnId": "t_withdrawal_target__operation_id",
+        "orderType": 1
+      },
+      "ix_ix_withdrawal_target_pending_1": {
+        "id": "ix_ix_withdrawal_target_pending_1",
+        "indexId": "ix_ix_withdrawal_target_pending",
+        "columnId": "t_withdrawal_target__status",
+        "orderType": 1
+      }
+    },
+    "memoEntities": {
+      "m_title": {
+        "id": "m_title",
+        "value": "NOSPO  /  로그인 · 회원가입 ERD\n설계안 v1.1  ·  기능/API v2.1 기준  ·  MySQL\n이메일 가입 + 카카오 가입 + 로그인 방식 연결",
+        "ui": {
+          "x": 60,
+          "y": 25,
+          "width": 1300,
+          "height": 140,
+          "color": "#1e40af"
+        }
+      },
+      "m_legend": {
+        "id": "m_legend",
+        "value": "읽는 법\nPK: 기본 키  ·  FK: 관계선 끝의 외래 키  ·  UQ: 유일 제약\n실선: 식별 관계  /  점선: 비식별 관계\n모든 시각 UTC · UUID는 BINARY(16) · 빈 NN은 NULL 허용",
+        "ui": {
+          "x": 1460,
+          "y": 25,
+          "width": 1320,
+          "height": 140,
+          "color": "#475569"
+        }
+      },
+      "m_core": {
+        "id": "m_core",
+        "value": "회원과 인증의 경계\nmember: 닉네임·전화번호·프로필·상태\nidentity: 서비스 이메일·로그인 수단·세션\n이메일 가입 = password_credential 행 존재\n카카오 가입 = social_identity 행 존재\nloginMethods는 두 테이블에서 계산 · 전화번호는 UNIQUE 아님\nJPA는 모듈 간 객체 연관 대신 memberId로 연결",
+        "ui": {
+          "x": 80,
+          "y": 730,
+          "width": 1240,
+          "height": 270,
+          "color": "#2563eb"
+        }
+      },
+      "m_terms": {
+        "id": "m_terms",
+        "value": "가입 완료는 한 트랜잭션\n회원 + 계정 + 로그인 수단 + 약관 동의\n+ 가입 보상 5토큰 + 증명 소비 + 자동 로그인 세션\n\ncredit 지갑/원장은 별도 도메인으로 이 ERD 범위 밖.\n회원별 가입 보상 1회 제약은 credit 원장에서 보장.\n필수 약관 최신 버전은 가입 완료 시 다시 검증.\n동의 이력은 덮어쓰지 않으며 탈퇴 시 삭제.",
+        "ui": {
+          "x": 760,
+          "y": 1570,
+          "width": 540,
+          "height": 460,
+          "color": "#16a34a"
+        }
+      },
+      "m_proof": {
+        "id": "m_proof",
+        "value": "인증 처리 규칙\n링크/번호 10분 · 재발송 60초 · 코드 실패 최대 5회\n증명은 발급부터 10분 / 재인증 5분 / 소셜 가입 15분\n정규화 이메일+목적 단위 직렬화(최초 요청도 포함).\n링크 재클릭: 409 CHALLENGE_ALREADY_VERIFIED, 기존 증명 유지.\n요청 만료가 유효 증명을 연쇄 삭제하지 않도록 RESTRICT.\n이메일·회원·IP 제한 카운터는 TTL 저장소에서 관리.",
+        "ui": {
+          "x": 1460,
+          "y": 1830,
+          "width": 1280,
+          "height": 300,
+          "color": "#d97706"
+        }
+      },
+      "m_oauth": {
+        "id": "m_oauth",
+        "value": "세션과 탈퇴\nAccess 15분 / Refresh 14일. JWT에는 sid 포함.\n요청마다 회원 상태와 세션 폐기를 확인.\nRefresh 회전은 원자 처리, 사용된 토큰 재등장 시 세션 폐기.\n비밀번호 변경·재설정 시 전체 세션 폐기.\n탈퇴: WITHDRAWING으로 접근 차단 후 개인정보 실제 삭제.\nFK CASCADE만으로 외부 파일·캐시 삭제 완료를 대신하지 않음.",
+        "ui": {
+          "x": 760,
+          "y": 2360,
+          "width": 540,
+          "height": 540,
+          "color": "#7c3aed"
+        }
+      },
+      "m_idempotency": {
+        "id": "m_idempotency",
+        "value": "운영 제약\n성공한 멱등 응답 조회를 소비된 증명 검사보다 먼저 수행.\n동일 키·다른 요청: 409. 결과 24시간, 탈퇴 시 삭제.\n원문 비밀번호·증명·Refresh 저장 금지. OTP는 요청 결합 HMAC.\n메일 재시도용 원문 토큰은 한시적 암호문만 허용.\n가입 중복 충돌은 보상·동의·증명 소비까지 모두 롤백.\n가입 전 자료 소유권 귀속도 가입 트랜잭션에 포함.\n설계안이며 운영 마이그레이션/워커 구현은 아님.",
+        "ui": {
+          "x": 2160,
+          "y": 2360,
+          "width": 580,
+          "height": 540,
+          "color": "#db2777"
+        }
+      },
+      "m_delivery": {
+        "id": "m_delivery",
+        "value": "메일 outbox 규칙\n202 = 작업 접수 · ACCEPTED = 제공자 접수(도착 보장 아님)\n요청 + 발송 작업은 같은 DB 트랜잭션. 외부 전송은 워커가 수행.\n전송 직전 요청의 만료·무효화·회원 상태를 재검사.\n응답 유실 재시도도 같은 암호문에서 같은 토큰/링크 사용.\nACCEPTED/FAILED/CANCELLED/만료 시 암호문·키 참조 삭제.\n재발송은 이전 미사용 증명 무효화 + 대기 발송 취소와 원자 처리.\n이미 전송 중인 메일은 회수 불가. 이전 링크 검증을 차단.\nlease 만료 재점유 및 소유권 검사로 늦은 워커 저장 차단.\n작업 상태는 내부 상태이며 새 상태 조회 API를 추가하지 않음.",
+        "ui": {
+          "x": 2900,
+          "y": 1900,
+          "width": 1320,
+          "height": 420,
+          "color": "#0d9488"
+        }
+      },
+      "m_lifetimes": {
+        "id": "m_lifetimes",
+        "value": "수명과 정리 순서\n요청 expires_at과 증명 expires_at은 별개.\n12:09 검증 → 증명 12:19까지 유효; 요청 12:10 만료로 삭제 금지.\n유효한 자식이 참조하는 요청/OAuth는 보존(RESTRICT).\n가입 컨텍스트는 signupProof.expires_at을 따름.\n정리: 컨텍스트 → OAuth/발송 작업 → 증명 → 인증 요청.\n실제 참조 그래프와 유효 자식 유무를 확인하여 정리.\n가입 성공 시 사용한 사전 자료를 회원에 귀속하거나 삭제.\n탈퇴는 현재 이메일 검색이 아닌 member_id 소유 관계로 정리.",
+        "ui": {
+          "x": 2900,
+          "y": 2390,
+          "width": 1320,
+          "height": 460,
+          "color": "#0d9488"
+        }
+      },
+      "m_withdrawal": {
+        "id": "m_withdrawal",
+        "value": "탈퇴는 영구 보관/soft delete가 아님\n재인증 확인·증명 소비 + WITHDRAWING + 작업 생성 원자 처리.\nHTTP 연결 종료·재시작과 무관하게 워커가 재시도.\n세션/Refresh/JWT/재인증/연결/최종 저장 모두 차단.\n파일 키 확보 → 진행 작업 종료·저장 차단 → 익명화/개인 데이터 정리.\n이미 없는 삭제 대상은 성공. 실패 시 접근 차단 상태 유지.\n개인 DB·파일·캐시·색인·백업 키 정리 확인 후 최종 트랜잭션.\n대상·작업 행 제거 + 회원 행 삭제를 함께 확정.\n완료 회원 행/식별 가능한 작업 이력 보관 금지.\n204는 전체 완료 후에만. 202/상태 조회 API는 추가하지 않음.\n재가입 = 새 인증·새 회원 ID·가입 보상 5토큰.",
+        "ui": {
+          "x": 1520,
+          "y": 3150,
+          "width": 1160,
+          "height": 650,
+          "color": "#dc2626"
+        }
+      }
+    },
+    "tableGroupEntities": {
+      "g_core": {
+        "id": "g_core",
+        "name": "01  회원 · 계정 / member + identity",
+        "color": "#2563eb",
+        "ui": {
+          "x": 40,
+          "y": 210,
+          "width": 1320,
+          "height": 850
+        }
+      },
+      "g_login": {
+        "id": "g_login",
+        "name": "02  로그인 수단 / identity",
+        "color": "#0891b2",
+        "ui": {
+          "x": 1420,
+          "y": 210,
+          "width": 640,
+          "height": 850
+        }
+      },
+      "g_session": {
+        "id": "g_session",
+        "name": "03  로그인 세션 / identity",
+        "color": "#7c3aed",
+        "ui": {
+          "x": 2120,
+          "y": 210,
+          "width": 680,
+          "height": 850
+        }
+      },
+      "g_terms": {
+        "id": "g_terms",
+        "name": "04  약관과 동의 / terms",
+        "color": "#16a34a",
+        "ui": {
+          "x": 40,
+          "y": 1120,
+          "width": 1320,
+          "height": 1080
+        }
+      },
+      "g_verification": {
+        "id": "g_verification",
+        "name": "05  인증 요청 · 완료 증명 / identity",
+        "color": "#d97706",
+        "ui": {
+          "x": 1420,
+          "y": 1120,
+          "width": 1380,
+          "height": 1080
+        }
+      },
+      "g_flow": {
+        "id": "g_flow",
+        "name": "06  OAuth · 중복 요청 / identity + account-lifecycle",
+        "color": "#db2777",
+        "ui": {
+          "x": 40,
+          "y": 2260,
+          "width": 2760,
+          "height": 750
+        }
+      },
+      "g_delivery": {
+        "id": "g_delivery",
+        "name": "07  비동기 메일 · 가입 컨텍스트",
+        "color": "#0d9488",
+        "ui": {
+          "x": 2860,
+          "y": 1120,
+          "width": 1440,
+          "height": 1890
+        }
+      },
+      "g_withdrawal": {
+        "id": "g_withdrawal",
+        "name": "08  탈퇴 복구 작업 · 완료 시 실제 삭제",
+        "color": "#dc2626",
+        "ui": {
+          "x": 40,
+          "y": 3070,
+          "width": 2760,
+          "height": 1170
+        }
+      }
+    }
+  }
+}
