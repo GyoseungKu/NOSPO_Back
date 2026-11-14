@@ -39,16 +39,18 @@ public class KakaoOAuthService {
     private final IdentityStore accounts;
     private final Members members;
     private final DatabaseGuard guard;
+    private final KakaoAccountService accountActions;
     private final TransactionTemplate tx;
 
     public KakaoOAuthService(KakaoOAuthStore store, KakaoClient client, KakaoOAuthSettings settings,
             Secrets secrets, Clock clock, ObjectMapper mapper, SignupIdentity identity,
             LoginMethodStore loginStore, LoginMethods methods, IdentityStore accounts,
-            Members members, DatabaseGuard guard, PlatformTransactionManager manager) {
+            Members members, DatabaseGuard guard, KakaoAccountService accountActions, PlatformTransactionManager manager) {
         this.store = store; this.client = client; this.settings = settings; this.secrets = secrets;
         this.clock = clock; this.mapper = mapper; this.identity = identity;
         this.loginStore = loginStore; this.methods = methods; this.accounts = accounts;
         this.members = members; this.guard = guard;
+        this.accountActions = accountActions;
         tx = new TransactionTemplate(manager);
         tx.setIsolationLevel(org.springframework.transaction.TransactionDefinition.ISOLATION_READ_COMMITTED);
     }
@@ -129,12 +131,16 @@ public class KakaoOAuthService {
             Instant now = clock.instant();
             if (e.consumedAt() != null) throw new ApiException(409, "PROOF_ALREADY_USED");
             if (!e.expiresAt().isAfter(now)) throw new ApiException(410, "PROOF_EXPIRED");
+            if (!"LOGIN".equals(e.flow().type()) && member == null)
+                throw new ApiException(401, "INVALID_CREDENTIALS");
             if (e.flow().member() != null
                     && (!e.flow().member().equals(member) || !e.flow().session().equals(session)))
                 throw new ApiException(400, "INVALID_PROOF");
             checkSession(e.flow().member(), e.flow().session());
             var user = mapper.readValue(secrets.decrypt(e.payload(), "oauth-exchange:" + e.id()), KakaoClient.User.class);
             store.consumeExchange(e.id(), now);
+            if (!"LOGIN".equals(e.flow().type()))
+                return accountActions.exchange(e.flow(), user, member, session);
             var linked = loginStore.kakaoMember(user.subject());
             if (linked.isPresent()) {
                 UUID id = linked.get();

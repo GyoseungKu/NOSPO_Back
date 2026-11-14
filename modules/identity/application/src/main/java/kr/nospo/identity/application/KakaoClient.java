@@ -5,5 +5,7 @@ public interface KakaoClient {
 
     String authorizationUrl(String state, String redirectUri);
 
+    String reauthenticationUrl(String state, String redirectUri);
+
     User identify(String code, String redirectUri);
 }

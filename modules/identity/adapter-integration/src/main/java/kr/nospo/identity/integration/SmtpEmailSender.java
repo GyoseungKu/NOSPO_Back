@@ -55,6 +55,11 @@ public class SmtpEmailSender implements EmailSender {
             message.setSubject("NOSPO 이메일 변경 인증");
             message.setText("이메일 변경 인증번호: " + token.substring(7) + "\n유효기간은 10분입니다.");
         }
+        if (token.startsWith("LOGIN:")) {
+            message.setSubject("NOSPO 이메일 로그인 추가 인증");
+            message.setText("아래 페이지에서 이메일 로그인을 추가해 주세요. 링크 유효기간은 10분입니다.\n"
+                    + confirmUrl + "#purpose=ADD_EMAIL_LOGIN&token=" + token.substring(6));
+        }
         try {
             mail.send(message);
         } catch (MailException ex) {

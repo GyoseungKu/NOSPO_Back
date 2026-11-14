@@ -20,7 +20,8 @@ public class JdbcKakaoOAuthStore implements KakaoOAuthStore {
     private Flow flow(ResultSet r) throws SQLException {
         return new Flow(uuid(r.getBytes("flow_id")), r.getBytes("cookie_hash"),
                 key(r.getBytes("member_id")), key(r.getBytes("session_id")), r.getString("return_path"),
-                time(r, "flow_expiry"), time(r, "flow_consumed"));
+                time(r, "flow_expiry"), time(r, "flow_consumed"), r.getString("flow_type"),
+                r.getString("purpose"), key(r.getBytes("reauth_proof_id")));
     }
     public void createFlow(UUID id, byte[] state, byte[] cookie, UUID member, UUID session,
                            String path, Instant now) {
@@ -33,6 +34,13 @@ public class JdbcKakaoOAuthStore implements KakaoOAuthStore {
                         + " FROM oauth_flow WHERE state_hash=? FOR UPDATE", (r, n) -> flow(r), state)
                 .stream().findFirst();
     }
+    public void createAuthenticatedFlow(UUID id, byte[] state, byte[] cookie, UUID member, UUID session,
+            String path, String type, String purpose, UUID reauthProof, Instant now) {
+        db.update("INSERT INTO oauth_flow(flow_id,state_hash,cookie_hash,member_id,session_id,return_path,"
+                        + "flow_type,purpose,reauth_proof_id,created_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                id(id), state, cookie, id(member), id(session), path, type, purpose, bytes(reauthProof),
+                at(now), at(now.plusSeconds(300)));
+    }
     public void consumeFlow(UUID id, Instant now) {
         db.update("UPDATE oauth_flow SET consumed_at=? WHERE flow_id=?", at(now), id(id));
     }
@@ -42,6 +50,7 @@ public class JdbcKakaoOAuthStore implements KakaoOAuthStore {
     }
     public Optional<Exchange> lockExchange(byte[] code) {
         return db.query("SELECT e.*,f.cookie_hash,f.member_id,f.session_id,f.return_path,"
+                        + "f.flow_type,f.purpose,f.reauth_proof_id,"
                         + "f.expires_at AS flow_expiry,f.consumed_at AS flow_consumed"
                         + " FROM oauth_exchange e JOIN oauth_flow f ON f.flow_id=e.flow_id"
                         + " WHERE e.code_hash=? FOR UPDATE",

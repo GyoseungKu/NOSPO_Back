@@ -108,6 +108,12 @@ class KakaoHttpClientTests {
                 .containsEntry("redirect_uri", "https://api.example/api/v1/auth/kakao/callback");
     }
     @Test
+    void reauthenticationExplicitlyPromptsLoginWithoutExposingSecret() {
+        String url = client.reauthenticationUrl("state", "https://api.example/callback");
+        assertThat(form(URI.create(url).getRawQuery())).containsEntry("prompt", "login").containsEntry("state", "state");
+        assertThat(url).doesNotContain("test-client-secret");
+    }
+    @Test
     void tokenErrorsAreSanitizedAndUserApiIsNotCalled(CapturedOutput output) {
         tokenStatus.set(400); tokenBody.set("test-client-secret test-provider-token test-authorization-code");
         failure(); assertThat(userCalls.get()).isZero();

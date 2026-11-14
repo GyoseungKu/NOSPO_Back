@@ -41,6 +41,10 @@ public class KakaoHttpClient implements KakaoClient {
                 + "&redirect_uri=" + enc(redirectUri) + "&state=" + enc(state);
     }
 
+    public String reauthenticationUrl(String state, String redirectUri) {
+        return authorizationUrl(state, redirectUri) + "&prompt=login";
+    }
+
     public User identify(String code, String redirectUri) {
         configured();
         try {

@@ -299,10 +299,14 @@ public class JdbcIdentityStore implements IdentityStore {
                             + " AND d.status='PROCESSING' AND d.cancellation_requested_at IS NULL"
                             + " AND d.payload_expires_at>? AND c.expires_at>? AND c.invalidated_at"
                             + " IS NULL AND c.verified_at IS NULL AND (d.member_id IS NULL OR"
-                            + " m.status='ACTIVE')",
+                            + " m.status='ACTIVE') AND (c.purpose<>'EMAIL_LOGIN' OR EXISTS"
+                            + " (SELECT 1 FROM account a JOIN auth_session s ON s.member_id=a.member_id"
+                            + " WHERE a.member_id=c.member_id AND a.email_key=c.target_email_key"
+                            + " AND s.session_id=c.session_id AND s.revoked_at IS NULL AND s.expires_at>?))",
                         Integer.class,
                         id(job.id()),
                         id(job.lease()),
+                        at(now),
                         at(now),
                         at(now))
                 == 1;
@@ -342,7 +346,8 @@ public class JdbcIdentityStore implements IdentityStore {
                         + " payload_expires_at<=?",
                 at(now));
         jdbc.update("DELETE FROM auth_proof WHERE expires_at<=? AND NOT EXISTS"
-                + " (SELECT 1 FROM social_signup_context c WHERE c.proof_id=auth_proof.proof_id)", at(now));
+                + " (SELECT 1 FROM social_signup_context c WHERE c.proof_id=auth_proof.proof_id) AND NOT EXISTS"
+                + " (SELECT 1 FROM oauth_flow f WHERE f.reauth_proof_id=auth_proof.proof_id)", at(now));
         jdbc.update(
                 "DELETE FROM auth_challenge WHERE expires_at<=? AND NOT EXISTS (SELECT 1 FROM"
                         + " auth_proof p WHERE p.challenge_id=auth_challenge.challenge_id) AND NOT"

@@ -20,6 +20,7 @@ public class AccountChangeService {
     public record EmailProof(String emailChangeProof, Instant expiresAt) {}
 
     private final VerificationStore store;
+    private final EmailLoginStore emailLogin;
     private final IdentityCrypto crypto;
     private final SignupIdentity identity;
     private final IdentityStore deliveries;
@@ -30,6 +31,7 @@ public class AccountChangeService {
 
     public AccountChangeService(
             VerificationStore store,
+            EmailLoginStore emailLogin,
             IdentityCrypto crypto,
             SignupIdentity identity,
             IdentityStore deliveries,
@@ -38,6 +40,7 @@ public class AccountChangeService {
             Clock clock,
             PlatformTransactionManager manager) {
         this.store = store;
+        this.emailLogin = emailLogin;
         this.crypto = crypto;
         this.identity = identity;
         this.deliveries = deliveries;
@@ -64,7 +67,7 @@ public class AccountChangeService {
     }
 
     public ProofResult reauthenticate(UUID member, UUID session, String password, String purpose) {
-        if (!Set.of("CHANGE_EMAIL", "WITHDRAWAL").contains(purpose))
+        if (!Set.of("CHANGE_EMAIL", "WITHDRAWAL", "LINK_KAKAO").contains(purpose))
             throw new ApiException(422, "VALIDATION_ERROR");
         String hash = checkPassword(member, password);
         return tx.execute(
@@ -195,6 +198,7 @@ public class AccountChangeService {
                     if (store.emailExists(proof.email()))
                         throw new ApiException(409, "EMAIL_ALREADY_EXISTS");
                     store.changeEmail(member, proof.email(), now);
+                    emailLogin.invalidate(member, now);
                     store.consume(proof.id(), now);
                     // Recovery material issued to the old email must no longer change this account.
                     store.invalidate("PASSWORD_RESET", null, member, now);
