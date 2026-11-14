@@ -25,7 +25,9 @@ class SwaggerUiTests {
         mvc.perform(get("/swagger-ui/index.html")).andExpect(status().isOk());
         mvc.perform(get("/v3/api-docs"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.info.title").value("NOSPO API"));
+                .andExpect(jsonPath("$.info.title").value("NOSPO API"))
+                .andExpect(jsonPath("$.servers.length()").value(1))
+                .andExpect(jsonPath("$.servers[0].url").value("https://nospo.syu-likelion.org"));
         mvc.perform(get("/v3/api-docs/swagger-config"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.url").value("/v3/api-docs"));
