@@ -32,7 +32,7 @@ public class SecurityConfig {
             throw new IllegalArgumentException("Explicit allowed origins required");
         CorsConfiguration cors = new CorsConfiguration();
         cors.setAllowedOrigins(allowedOrigins);
-        cors.setAllowedMethods(List.of("GET", "POST", "OPTIONS"));
+        cors.setAllowedMethods(List.of("GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"));
         cors.setAllowedHeaders(List.of("Content-Type", "Authorization", "Idempotency-Key"));
         cors.setAllowCredentials(true);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
@@ -41,9 +41,16 @@ public class SecurityConfig {
                 .csrf(
                         c ->
                                 c.ignoringRequestMatchers(
+                                        "/api/v1/me/**",
                                         "/api/v1/auth/signup",
                                         "/api/v1/auth/signup/email-verifications",
-                                        "/api/v1/auth/signup/email-verifications/confirm"))
+                                        "/api/v1/auth/signup/email-verifications/confirm",
+                                        "/api/v1/auth/login",
+                                        "/api/v1/auth/token/refresh",
+                                        "/api/v1/auth/logout",
+                                        "/api/v1/auth/password-resets",
+                                        "/api/v1/auth/password-resets/verify",
+                                        "/api/v1/auth/password-resets/complete"))
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(
                         a ->
@@ -64,7 +71,13 @@ public class SecurityConfig {
                                                 org.springframework.http.HttpMethod.POST,
                                                 "/api/v1/auth/signup",
                                                 "/api/v1/auth/signup/email-verifications",
-                                                "/api/v1/auth/signup/email-verifications/confirm")
+                                                "/api/v1/auth/signup/email-verifications/confirm",
+                                                "/api/v1/auth/login",
+                                                "/api/v1/auth/token/refresh",
+                                                "/api/v1/auth/logout",
+                                                "/api/v1/auth/password-resets",
+                                                "/api/v1/auth/password-resets/verify",
+                                                "/api/v1/auth/password-resets/complete")
                                         .permitAll()
                                         .anyRequest()
                                         .authenticated())

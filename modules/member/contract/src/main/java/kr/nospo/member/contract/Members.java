@@ -4,7 +4,12 @@ import java.time.Instant;
 import java.util.UUID;
 
 public interface Members {
-    record Profile(UUID memberId, String nickname, String phoneNumber, Instant createdAt) {}
+    record Profile(
+            UUID memberId,
+            String nickname,
+            String phoneNumber,
+            Instant createdAt,
+            String profileImageUrl) {}
 
     Profile create(String nickname, String phone, Instant now);
 

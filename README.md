@@ -3,17 +3,17 @@ NOSPO Web/App Back-End Project
 
 ## API 문서
 
-애플리케이션 실행 후 다음 주소에서 확인할 수 있습니다(기본 포트 8000).
+애플리케이션 실행 후 다음 주소에서 확인할 수 있습니다(기본 포트 8080).
 
-- Swagger UI: http://localhost:8000/swagger-ui.html
-- OpenAPI JSON: http://localhost:8000/v3/api-docs
+- Swagger UI: http://localhost:8080/swagger-ui.html
+- OpenAPI JSON: http://localhost:8080/v3/api-docs
 
 문서·약관·가입 API는 인증 없이 접근 가능합니다. `/api/v1/me`는 가입 후 받은 Bearer JWT로 호출합니다.
 Swagger에는 구현된 컨트롤러만 표시됩니다.
 
 ## 이메일 회원가입
 
-현재 범위는 일반 이메일 회원가입입니다. 카카오, 기존 회원 로그인, Refresh 회전·로그아웃, 비밀번호 재설정, 탈퇴 API는 후속 구현 대상입니다. 가입 완료 시 Access JWT(15분)와 Refresh 쿠키(14일)를 발급하며, 현재 JWT로 내 정보를 조회할 수 있습니다. Refresh 재발급 API는 아직 제공하지 않습니다.
+이메일 회원가입·로그인·Refresh 회전·로그아웃·비밀번호 재설정을 제공합니다. 가입과 로그인 시 Access JWT(15분)와 Refresh 쿠키(14일 세션)를 발급합니다. 상세 계약과 제한은 [Auth API 구현 문서](docs/Auth_API_Implementation.md)를 참고하세요. 닉네임·연락처·프로필·이메일·비밀번호 변경과 비밀번호 재인증도 구현했습니다. [내 정보 변경 문서](docs/Member_Profile_API_Implementation.md)를 참고하세요. 카카오와 탈퇴 API는 후속 구현 대상입니다.
 
 | 순서 | API | 동작 |
 | --- | --- | --- |
@@ -45,7 +45,7 @@ Swagger에는 구현된 컨트롤러만 표시됩니다.
 
 ## 실행 설정
 
-Java 21, MySQL 8.4 기준입니다. 프로젝트 루트의 `env.properties`에 아래 설정을 채우고 `./gradlew bootRun`을 실행합니다. 이 파일은 Git에서 제외되며 실행 작업 디렉터리를 기준으로 자동 로드됩니다. IntelliJ의 Working directory도 프로젝트 루트로 지정합니다. 파일이 없어도 OS 환경변수로 설정할 수 있으며, 같은 이름의 OS 환경변수가 파일보다 우선합니다. 값에 따옴표를 붙이지 마세요. `.env` 파일은 자동으로 읽지 않습니다.
+Java 21, MySQL 8.4 기준입니다. IntelliJ 실행 설정 또는 OS 환경변수에 다음 값을 지정하고 `./gradlew bootRun`을 실행합니다. `.env` 파일은 자동으로 읽지 않습니다.
 
 | 환경변수 | 의미 |
 | --- | --- |
@@ -53,8 +53,8 @@ Java 21, MySQL 8.4 기준입니다. 프로젝트 루트의 `env.properties`에 �
 | `AUTH_ENCRYPTION_KEY` | 메일/멱등 응답 암호화용 32바이트 Base64 키 |
 | `AUTH_HMAC_KEY` | 요청 지문·제한 카운터용 별도의 32바이트 Base64 키 |
 | `AUTH_JWT_KEY` | JWT 서명용 별도의 32바이트 Base64 키 |
-| `AUTH_ALLOWED_ORIGINS` | 허용 Origin을 쉼표로 구분. 기본 `https://nospo.syu-likelion.org` |
-| `AUTH_EMAIL_CONFIRM_URL` | 기본 `https://nospo.syu-likelion.org/auth/email-confirm`. 프론트에서 해당 페이지 제공 필요, query·fragment 없이 설정 |
+| `AUTH_ALLOWED_ORIGINS` | 허용 Origin을 쉼표로 구분. 기본 localhost:3000·localhost:8080 |
+| `AUTH_EMAIL_CONFIRM_URL` | 프론트 인증 확인 페이지 URL, query·fragment 없이 설정 |
 | `AUTH_SECURE_COOKIE` | 기본 true. 로컬 HTTP 테스트에서만 false 사용 가능 |
 | `SMTP_HOST`, `SMTP_PORT` | SMTP 호스트·포트. 로컬 기본 localhost:1025 |
 | `SMTP_USERNAME`, `SMTP_PASSWORD` | SMTP 인증 정보 |

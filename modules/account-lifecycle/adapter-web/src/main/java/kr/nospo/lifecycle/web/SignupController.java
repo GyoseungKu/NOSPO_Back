@@ -30,13 +30,16 @@ public class SignupController {
 
     private final SignupService service;
     private final Clock clock;
+    private final kr.nospo.support.DatabaseGuard guard;
     private final boolean secureCookie;
 
     public SignupController(
             SignupService service,
+            kr.nospo.support.DatabaseGuard guard,
             Clock clock,
             @Value("${nospo.auth.secure-cookie:true}") boolean secureCookie) {
         this.service = service;
+        this.guard = guard;
         this.clock = clock;
         this.secureCookie = secureCookie;
     }
@@ -48,7 +51,11 @@ public class SignupController {
 
     @PostMapping("/auth/signup")
     public ResponseEntity<ApiResponse<SignupResult>> signup(
-            @RequestHeader("Idempotency-Key") UUID key, @Valid @RequestBody Request request) {
+            @RequestHeader("Idempotency-Key") UUID key,
+            @Valid @RequestBody Request request,
+            jakarta.servlet.http.HttpServletRequest http) {
+        guard.rateLimit(
+                "signup-ip:" + http.getRemoteAddr(), 20, Duration.ofMinutes(15), clock.instant());
         var command =
                 new SignupService.Command(
                         request.nickname(),

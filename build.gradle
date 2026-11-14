@@ -73,6 +73,8 @@ dependencies {
     implementation project(':support')
     implementation project(':member:contract')
     implementation project(':member:application')
+    implementation project(':member:adapter-web')
+    implementation project(':member:adapter-integration')
     implementation project(':member:domain')
     implementation project(':member:adapter-persistence')
     implementation project(':terms:contract')

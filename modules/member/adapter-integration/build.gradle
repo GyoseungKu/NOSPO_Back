@@ -1,0 +1,7 @@
+plugins { id 'java-library' }
+dependencies {
+    implementation project(':member:application')
+    implementation project(':support')
+    implementation 'org.springframework:spring-context'
+    runtimeOnly 'com.twelvemonkeys.imageio:imageio-webp:3.15.0'
+}

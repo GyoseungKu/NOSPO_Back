@@ -37,7 +37,7 @@ public class JdbcMembers implements MemberStore {
         } catch (DuplicateKeyException ex) {
             throw new ApiException(409, "NICKNAME_ALREADY_EXISTS");
         }
-        return new Profile(member, nickname, phone, now);
+        return new Profile(member, nickname, phone, now, null);
     }
 
     public boolean nicknameAvailable(String key) {
@@ -55,7 +55,8 @@ public class JdbcMembers implements MemberStore {
                                         uuid(rs.getBytes("member_id")),
                                         rs.getString("nickname"),
                                         rs.getString("phone_number"),
-                                        rs.getTimestamp("created_at").toInstant()),
+                                        rs.getTimestamp("created_at").toInstant(),
+                                        rs.getString("profile_image_key")),
                         id(member))
                 .stream()
                 .findFirst()

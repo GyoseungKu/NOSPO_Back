@@ -47,6 +47,14 @@ public class SmtpEmailSender implements EmailSender {
                         + confirmUrl
                         + "#token="
                         + token);
+        if (token.startsWith("RESET:")) {
+            message.setSubject("NOSPO 비밀번호 재설정");
+            message.setText("비밀번호 재설정 인증번호: " + token.substring(6) + "\n유효기간은 10분입니다.");
+        }
+        if (token.startsWith("CHANGE:")) {
+            message.setSubject("NOSPO 이메일 변경 인증");
+            message.setText("이메일 변경 인증번호: " + token.substring(7) + "\n유효기간은 10분입니다.");
+        }
         try {
             mail.send(message);
         } catch (MailException ex) {

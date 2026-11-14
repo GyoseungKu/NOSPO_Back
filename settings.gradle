@@ -70,3 +70,8 @@ project(':account-lifecycle:adapter-persistence').projectDir = file('modules/acc
 
 include ':account-lifecycle:adapter-web'
 project(':account-lifecycle:adapter-web').projectDir = file('modules/account-lifecycle/adapter-web')
+
+include ':member:adapter-web'
+project(':member:adapter-web').projectDir = file('modules/member/adapter-web')
+include ':member:adapter-integration'
+project(':member:adapter-integration').projectDir = file('modules/member/adapter-integration')

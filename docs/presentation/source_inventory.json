@@ -1,0 +1,202 @@
+[
+  {
+    "path": "src/main/java/kr/nospo/nospo_backend/NospoBackendApplication.java",
+    "role": "Spring Boot 시작, kr.nospo 전체 컴포넌트 검색"
+  },
+  {
+    "path": "src/main/java/kr/nospo/nospo_backend/config/AuthConfiguration.java",
+    "role": "Clock, JWT encoder/decoder, 세션 검증, 스케줄 활성화"
+  },
+  {
+    "path": "src/main/java/kr/nospo/nospo_backend/config/OpenApiConfig.java",
+    "role": "Swagger 제목과 /me의 Bearer 인증 문서화"
+  },
+  {
+    "path": "src/main/java/kr/nospo/nospo_backend/config/SecurityConfig.java",
+    "role": "허용 경로, CORS·Origin 검사, Bearer 인증과 보안 오류"
+  },
+  {
+    "path": "src/main/java/kr/nospo/nospo_backend/config/SignupCleanup.java",
+    "role": "만료 멱등 결과 정리, 기본 60초 fixed delay"
+  },
+  {
+    "path": "modules/member/adapter-persistence/src/main/java/kr/nospo/member/persistence/JdbcMembers.java",
+    "role": "member 테이블 SQL, 중복 닉네임 오류 변환"
+  },
+  {
+    "path": "modules/member/application/src/main/java/kr/nospo/member/application/MemberService.java",
+    "role": "회원 입력 검증·정규화 후 저장 포트 호출"
+  },
+  {
+    "path": "modules/member/application/src/main/java/kr/nospo/member/application/MemberStore.java",
+    "role": "회원 생성·조회·닉네임·상태 확인 저장 포트"
+  },
+  {
+    "path": "modules/member/contract/src/main/java/kr/nospo/member/contract/Members.java",
+    "role": "회원 업무의 공개 인터페이스와 Profile record"
+  },
+  {
+    "path": "modules/member/domain/src/main/java/kr/nospo/member/domain/MemberInput.java",
+    "role": "닉네임·전화번호 정규화와 검증 규칙"
+  },
+  {
+    "path": "modules/identity/application/src/main/java/kr/nospo/identity/application/EmailDeliveryService.java",
+    "role": "메일 작업 점유·전송·재시도·완료·정리"
+  },
+  {
+    "path": "modules/identity/application/src/main/java/kr/nospo/identity/application/EmailSender.java",
+    "role": "메일 전송 포트와 영구/일시 실패 표현"
+  },
+  {
+    "path": "modules/identity/application/src/main/java/kr/nospo/identity/application/EmailVerificationService.java",
+    "role": "인증 발급·재발송·링크 확인·가입 proof 생성"
+  },
+  {
+    "path": "modules/identity/application/src/main/java/kr/nospo/identity/application/IdentityCrypto.java",
+    "role": "비밀번호 해시·Access Token 생성 포트"
+  },
+  {
+    "path": "modules/identity/application/src/main/java/kr/nospo/identity/application/IdentityStore.java",
+    "role": "인증·계정·세션·발송 작업 저장 포트와 record"
+  },
+  {
+    "path": "modules/identity/application/src/main/java/kr/nospo/identity/application/SignupIdentityService.java",
+    "role": "증명 검사·계정 생성·세션 발급·상태 조회"
+  },
+  {
+    "path": "modules/identity/contract/src/main/java/kr/nospo/identity/contract/SignupIdentity.java",
+    "role": "가입 인증·계정·세션의 공개 인터페이스"
+  },
+  {
+    "path": "modules/identity/domain/src/main/java/kr/nospo/identity/domain/EmailAddress.java",
+    "role": "이메일 소문자화·공백 제거·형식 검증"
+  },
+  {
+    "path": "modules/identity/adapter-integration/src/main/java/kr/nospo/identity/integration/JwtIdentityCrypto.java",
+    "role": "Argon2 비밀번호 해시, HS256 JWT 생성"
+  },
+  {
+    "path": "modules/identity/adapter-integration/src/main/java/kr/nospo/identity/integration/SmtpEmailSender.java",
+    "role": "SMTP 발송, fragment 링크, SMTP 오류 분류"
+  },
+  {
+    "path": "modules/identity/adapter-persistence/src/main/java/kr/nospo/identity/persistence/JdbcIdentityStore.java",
+    "role": "identity 테이블 SQL, 작업 lease와 조건부 갱신"
+  },
+  {
+    "path": "modules/identity/adapter-web/src/main/java/kr/nospo/identity/web/EmailVerificationController.java",
+    "role": "이메일 가용성·인증 요청·확인 HTTP API"
+  },
+  {
+    "path": "modules/identity/adapter-worker/src/main/java/kr/nospo/identity/worker/EmailWorker.java",
+    "role": "메일 처리·정리를 주기 실행하는 스케줄 입구"
+  },
+  {
+    "path": "modules/credit/adapter-persistence/src/main/java/kr/nospo/credit/persistence/JdbcCredits.java",
+    "role": "credit_wallet와 SIGNUP 거래 원장 INSERT"
+  },
+  {
+    "path": "modules/credit/application/src/main/java/kr/nospo/credit/application/CreditStore.java",
+    "role": "가입 지갑 생성과 보상 기록 저장 포트"
+  },
+  {
+    "path": "modules/credit/application/src/main/java/kr/nospo/credit/application/SignupCreditService.java",
+    "role": "가입 보상 수량 5 결정, 지급 호출"
+  },
+  {
+    "path": "modules/credit/contract/src/main/java/kr/nospo/credit/contract/SignupCredits.java",
+    "role": "가입 보상 지급 공개 인터페이스"
+  },
+  {
+    "path": "modules/terms/adapter-persistence/src/main/java/kr/nospo/terms/persistence/JdbcTerms.java",
+    "role": "현행 시행 버전 조회, term 잠금, 동의 INSERT"
+  },
+  {
+    "path": "modules/terms/adapter-web/src/main/java/kr/nospo/terms/web/TermsController.java",
+    "role": "현행 약관 목록·버전 상세 HTTP API"
+  },
+  {
+    "path": "modules/terms/application/src/main/java/kr/nospo/terms/application/TermService.java",
+    "role": "현행 약관·필수 동의 검증, 동의 저장 조율"
+  },
+  {
+    "path": "modules/terms/application/src/main/java/kr/nospo/terms/application/TermStore.java",
+    "role": "약관 조회·잠금·동의 저장 포트"
+  },
+  {
+    "path": "modules/terms/contract/src/main/java/kr/nospo/terms/contract/Terms.java",
+    "role": "약관 조회·가입 동의 기록의 공개 계약"
+  },
+  {
+    "path": "modules/account-lifecycle/adapter-persistence/src/main/java/kr/nospo/lifecycle/persistence/JdbcSignupRecords.java",
+    "role": "idempotency_record SQL과 24시간 보관"
+  },
+  {
+    "path": "modules/account-lifecycle/adapter-web/src/main/java/kr/nospo/lifecycle/web/SignupController.java",
+    "role": "닉네임 가용성·가입·내 정보, Refresh 쿠키"
+  },
+  {
+    "path": "modules/account-lifecycle/application/src/main/java/kr/nospo/lifecycle/application/SignupRecords.java",
+    "role": "성공 멱등 결과 조회·저장·정리 포트"
+  },
+  {
+    "path": "modules/account-lifecycle/application/src/main/java/kr/nospo/lifecycle/application/SignupResult.java",
+    "role": "가입 응답 및 회원 정보 record"
+  },
+  {
+    "path": "modules/account-lifecycle/application/src/main/java/kr/nospo/lifecycle/application/SignupService.java",
+    "role": "전체 가입 순서·트랜잭션·멱등 처리·내 정보 조합"
+  },
+  {
+    "path": "modules/support/src/main/java/kr/nospo/support/ApiErrors.java",
+    "role": "예외→공통 HTTP 오류 응답, 민감 상세 노출 제한"
+  },
+  {
+    "path": "modules/support/src/main/java/kr/nospo/support/ApiException.java",
+    "role": "HTTP 상태·오류 코드·재시도 대기시간 표현"
+  },
+  {
+    "path": "modules/support/src/main/java/kr/nospo/support/ApiResponse.java",
+    "role": "공통 성공 응답 data와 meta.requestId"
+  },
+  {
+    "path": "modules/support/src/main/java/kr/nospo/support/DatabaseGuard.java",
+    "role": "DB 행 잠금, 독립 트랜잭션 요청 제한, TTL 정리"
+  },
+  {
+    "path": "modules/support/src/main/java/kr/nospo/support/Secrets.java",
+    "role": "난수 token, SHA-256, HMAC 지문, AES-GCM 암호화"
+  },
+  {
+    "path": "modules/support/src/main/java/kr/nospo/support/SqlIds.java",
+    "role": "UUID↔바이트와 Instant→SQL Timestamp 변환"
+  },
+  {
+    "path": "src/test/java/kr/nospo/nospo_backend/EmailSignupTests.java",
+    "role": "가입·메일·동시성·재시도·HTTP 통합 검증"
+  },
+  {
+    "path": "src/test/java/kr/nospo/nospo_backend/MySqlEmailSignupTests.java",
+    "role": "동일 가입 테스트를 MySQL 8.4.7에서 실행"
+  },
+  {
+    "path": "src/test/java/kr/nospo/nospo_backend/NospoBackendApplicationTests.java",
+    "role": "Spring 애플리케이션 컨텍스트 로딩"
+  },
+  {
+    "path": "src/test/java/kr/nospo/nospo_backend/SmtpEmailSenderTests.java",
+    "role": "SMTP 5xx 영구 실패·4xx 재시도 분류 확인"
+  },
+  {
+    "path": "src/test/java/kr/nospo/nospo_backend/SwaggerUiTests.java",
+    "role": "Swagger 공개 접근과 그 외 경로 인증 확인"
+  },
+  {
+    "path": "src/test/java/kr/nospo/nospo_backend/TestNospoBackendApplication.java",
+    "role": "개발용 Testcontainers 구성으로 앱 실행"
+  },
+  {
+    "path": "src/test/java/kr/nospo/nospo_backend/TestcontainersConfiguration.java",
+    "role": "개발용 mysql:latest 컨테이너 Bean 설정"
+  }
+]

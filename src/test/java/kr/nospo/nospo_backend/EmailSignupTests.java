@@ -49,6 +49,436 @@ class EmailSignupTests {
     final List<Terms.Consent> consents = new ArrayList<>();
     final Map<String, String> sent = new ConcurrentHashMap<>();
 
+    @Autowired kr.nospo.identity.application.AuthService auth;
+    @Autowired kr.nospo.identity.application.PasswordResetService resets;
+
+    @Test
+    void loginRotationReuseAndLogout() throws Exception {
+        signup.signup(UUID.randomUUID(), command(proof("reader@example.com"), "독서가"));
+        code(() -> auth.login("reader@example.com", "wrong", "login"), "INVALID_CREDENTIALS");
+        var session = auth.login("reader@example.com", " valid password ", "login");
+        var rotated = auth.refresh(session.refresh());
+        assertThat(rotated.refresh()).isNotEqualTo(session.refresh());
+        code(() -> auth.refresh(session.refresh()), "INVALID_CREDENTIALS");
+        code(() -> auth.refresh(rotated.refresh()), "INVALID_CREDENTIALS");
+        var next = auth.login("reader@example.com", " valid password ", "login");
+        auth.logout(null, next.refresh());
+        code(() -> auth.refresh(next.refresh()), "INVALID_CREDENTIALS");
+        mvc.perform(
+                        post("/api/v1/auth/login")
+                                .contentType("application/json")
+                                .content(
+                                        "{\"email\":\"reader@example.com\",\"password\":\" valid"
+                                            + " password \"}"))
+                .andExpect(status().isOk())
+                .andExpect(cookie().httpOnly("refreshToken", true));
+        mvc.perform(post("/api/v1/auth/token/refresh")).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void passwordResetConsumesProofAndRevokesSessions() {
+        var original =
+                signup.signup(UUID.randomUUID(), command(proof("reader@example.com"), "독서가"));
+        var issued = resets.request("reader@example.com", "reset");
+        delivery.processDue();
+        String resetCode = sent.get("reader@example.com").substring(6);
+        var verified = resets.verify(issued.verificationId(), resetCode);
+        resets.complete(verified.resetProof(), "new valid password", "reset");
+        code(
+                () -> resets.complete(verified.resetProof(), "another password", "reset"),
+                "INVALID_PROOF");
+        code(() -> auth.refresh(original.refreshToken()), "INVALID_CREDENTIALS");
+        code(
+                () -> auth.login("reader@example.com", " valid password ", "login"),
+                "INVALID_CREDENTIALS");
+        assertThat(auth.login("reader@example.com", "new valid password", "login").accessToken())
+                .isNotBlank();
+    }
+
+    @Test
+    void resetWrongAttemptsArePersistedAndUnknownEmailDoesNotSend() {
+        signup.signup(UUID.randomUUID(), command(proof("reader@example.com"), "독서가"));
+        var issued = resets.request("reader@example.com", "reset");
+        delivery.processDue();
+        String actual = sent.get("reader@example.com").substring(6);
+        String wrong = actual.equals("000000") ? "111111" : "000000";
+        for (int i = 0; i < 5; i++)
+            code(() -> resets.verify(issued.verificationId(), wrong), "INVALID_VERIFICATION");
+        code(() -> resets.verify(issued.verificationId(), actual), "INVALID_VERIFICATION");
+        resets.request("unknown@example.com", "reset");
+        delivery.processDue();
+        assertThat(sent).doesNotContainKey("unknown@example.com");
+    }
+
+    @Test
+    void refreshLogoutAndResetHttpContracts() throws Exception {
+        var original =
+                signup.signup(UUID.randomUUID(), command(proof("reader@example.com"), "독서가"));
+        mvc.perform(
+                        post("/api/v1/auth/token/refresh")
+                                .cookie(
+                                        new jakarta.servlet.http.Cookie(
+                                                "refreshToken", original.refreshToken()))
+                                .header("Origin", "https://evil.example"))
+                .andExpect(status().isForbidden());
+        var response =
+                mvc.perform(
+                                post("/api/v1/auth/token/refresh")
+                                        .cookie(
+                                                new jakarta.servlet.http.Cookie(
+                                                        "refreshToken", original.refreshToken()))
+                                        .header("Origin", "http://localhost:3000"))
+                        .andExpect(status().isOk())
+                        .andExpect(jsonPath("$.data.expiresIn").value(900))
+                        .andReturn()
+                        .getResponse();
+        mvc.perform(
+                        post("/api/v1/auth/logout")
+                                .cookie(response.getCookie("refreshToken"))
+                                .header("Origin", "http://localhost:3000"))
+                .andExpect(status().isNoContent())
+                .andExpect(cookie().maxAge("refreshToken", 0));
+        var issuedResponse =
+                mvc.perform(
+                                post("/api/v1/auth/password-resets")
+                                        .contentType("application/json")
+                                        .content("{\"email\":\"reader@example.com\"}"))
+                        .andExpect(status().isAccepted())
+                        .andReturn()
+                        .getResponse();
+        String verificationId =
+                mapper.readTree(issuedResponse.getContentAsString())
+                        .path("data")
+                        .path("verificationId")
+                        .asText();
+        delivery.processDue();
+        var verifiedResponse =
+                mvc.perform(
+                                post("/api/v1/auth/password-resets/verify")
+                                        .contentType("application/json")
+                                        .content(
+                                                mapper.writeValueAsString(
+                                                        Map.of(
+                                                                "verificationId",
+                                                                verificationId,
+                                                                "code",
+                                                                sent.get("reader@example.com")
+                                                                        .substring(6)))))
+                        .andExpect(status().isOk())
+                        .andReturn()
+                        .getResponse();
+        String resetProof =
+                mapper.readTree(verifiedResponse.getContentAsString())
+                        .path("data")
+                        .path("resetProof")
+                        .asText();
+        mvc.perform(
+                        post("/api/v1/auth/password-resets/complete")
+                                .contentType("application/json")
+                                .content(
+                                        mapper.writeValueAsString(
+                                                Map.of(
+                                                        "resetProof",
+                                                        resetProof,
+                                                        "newPassword",
+                                                        "new valid password"))))
+                .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void lateSignupReplayRequiresLogin() {
+        UUID key = UUID.randomUUID();
+        var command = command(proof("reader@example.com"), "독서가");
+        signup.signup(key, command);
+        clock.advance(901);
+        code(() -> signup.signup(key, command), "SIGNUP_ALREADY_COMPLETED_LOGIN_REQUIRED");
+    }
+
+    @Autowired kr.nospo.identity.application.AccountChangeService changes;
+    @Autowired kr.nospo.member.application.ProfileService profiles;
+    @Autowired org.springframework.security.oauth2.jwt.JwtDecoder decoder;
+
+    private UUID sessionId(SignupService.Completed completed) {
+        return UUID.fromString(
+                decoder.decode(completed.data().accessToken()).getClaimAsString("sid"));
+    }
+
+    @Test
+    void profileChangesAreVisibleAndDuplicateNicknameRollsBack() throws Exception {
+        var first = signup.signup(UUID.randomUUID(), command(proof("first@example.com"), "첫회원"));
+        signup.signup(UUID.randomUUID(), command(proof("second@example.com"), "다른회원"));
+        UUID member = first.data().member().memberId(), session = sessionId(first);
+        assertThat(profiles.nickname(member, session, "새닉네임")).isEqualTo("새닉네임");
+        code(() -> profiles.nickname(member, session, "다른회원"), "NICKNAME_ALREADY_EXISTS");
+        profiles.phone(member, session, "010-9876-5432");
+        var me = signup.me(member);
+        assertThat(me.nickname()).isEqualTo("새닉네임");
+        assertThat(me.phoneNumber()).isEqualTo("+821098765432");
+        assertThat(me.phoneVerified()).isFalse();
+        mvc.perform(
+                        org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch(
+                                        "/api/v1/me/nickname")
+                                .header("Authorization", "Bearer " + first.data().accessToken())
+                                .contentType("application/json")
+                                .content("{\"nickname\":\"웹변경\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.nickname").value("웹변경"));
+        mvc.perform(
+                        org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch(
+                                        "/api/v1/me/phone-number")
+                                .contentType("application/json")
+                                .content("{\"phoneNumber\":\"01012345678\"}"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void imageUploadSanitizesAndDeleteClearsMe() throws Exception {
+        var first = signup.signup(UUID.randomUUID(), command(proof("first@example.com"), "첫회원"));
+        UUID member = first.data().member().memberId(), session = sessionId(first);
+        var image =
+                new java.awt.image.BufferedImage(2, 2, java.awt.image.BufferedImage.TYPE_INT_RGB);
+        var bytes = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(image, "png", bytes);
+        var file =
+                new org.springframework.mock.web.MockMultipartFile(
+                        "file", "photo.svg", "text/plain", bytes.toByteArray());
+        mvc.perform(
+                        org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                                .multipart(
+                                        org.springframework.http.HttpMethod.PUT,
+                                        "/api/v1/me/profile-image")
+                                .file(file)
+                                .header("Authorization", "Bearer " + first.data().accessToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.profileImageUrl").value("/api/v1/me/profile-image"));
+        assertThat(signup.me(member).profileImageUrl()).isEqualTo("/api/v1/me/profile-image");
+        assertThat(
+                        javax.imageio.ImageIO.read(
+                                        new java.io.ByteArrayInputStream(
+                                                profiles.image(member, session)))
+                                .getWidth())
+                .isEqualTo(2);
+        code(() -> profiles.image(member, session, "<svg/>".getBytes()), "INVALID_IMAGE");
+        code(
+                () -> profiles.image(member, session, new byte[5 * 1024 * 1024 + 1]),
+                "IMAGE_TOO_LARGE");
+        mvc.perform(
+                        org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete(
+                                        "/api/v1/me/profile-image")
+                                .header("Authorization", "Bearer " + first.data().accessToken()))
+                .andExpect(status().isNoContent());
+        assertThat(signup.me(member).profileImageUrl()).isNull();
+        code(() -> profiles.image(member, session), "RESOURCE_NOT_FOUND");
+    }
+
+    @Test
+    void emailChangeIsBoundToSessionAndInvalidatesOldRecovery() {
+        var first = signup.signup(UUID.randomUUID(), command(proof("first@example.com"), "첫회원"));
+        UUID member = first.data().member().memberId(), session = sessionId(first);
+        var recovery = resets.request("first@example.com", "reset");
+        delivery.processDue();
+        var recoveryProof =
+                resets.verify(
+                        recovery.verificationId(), sent.get("first@example.com").substring(6));
+        var reauth = changes.reauthenticate(member, session, " valid password ", "CHANGE_EMAIL");
+        var other = auth.login("first@example.com", " valid password ", "login");
+        UUID otherSession =
+                UUID.fromString(decoder.decode(other.accessToken()).getClaimAsString("sid"));
+        code(
+                () ->
+                        changes.requestEmail(
+                                member, otherSession, "new@example.com", reauth.reauthProof()),
+                "INVALID_PROOF");
+        var issued = changes.requestEmail(member, session, "new@example.com", reauth.reauthProof());
+        code(
+                () ->
+                        changes.requestEmail(
+                                member, session, "new@example.com", reauth.reauthProof()),
+                "INVALID_PROOF");
+        delivery.processDue();
+        String codeValue = sent.get("new@example.com").substring(7);
+        code(
+                () -> changes.verifyEmail(member, otherSession, issued.verificationId(), codeValue),
+                "INVALID_VERIFICATION");
+        var verified = changes.verifyEmail(member, session, issued.verificationId(), codeValue);
+        assertThat(changes.completeEmail(member, session, verified.emailChangeProof()))
+                .isEqualTo("new@example.com");
+        assertThat(signup.me(member).email()).isEqualTo("new@example.com");
+        code(
+                () -> changes.completeEmail(member, session, verified.emailChangeProof()),
+                "INVALID_PROOF");
+        code(
+                () -> resets.complete(recoveryProof.resetProof(), "new password!", "reset"),
+                "INVALID_PROOF");
+        code(
+                () -> auth.login("first@example.com", " valid password ", "login"),
+                "INVALID_CREDENTIALS");
+        assertThat(auth.login("new@example.com", " valid password ", "login").member())
+                .isEqualTo(member);
+    }
+
+    @Test
+    void passwordChangeRevokesEverySessionAndProof() throws Exception {
+        var first = signup.signup(UUID.randomUUID(), command(proof("first@example.com"), "첫회원"));
+        UUID member = first.data().member().memberId(), session = sessionId(first);
+        var other = auth.login("first@example.com", " valid password ", "login");
+        var proof = changes.reauthenticate(member, session, " valid password ", "CHANGE_EMAIL");
+        code(
+                () -> changes.password(member, session, "wrong", "new password!"),
+                "INVALID_CREDENTIALS");
+        mvc.perform(
+                        org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch(
+                                        "/api/v1/me/password")
+                                .header("Authorization", "Bearer " + first.data().accessToken())
+                                .contentType("application/json")
+                                .content(
+                                        "{\"currentPassword\":\" valid password"
+                                            + " \",\"newPassword\":\"new password!\"}"))
+                .andExpect(status().isNoContent())
+                .andExpect(cookie().maxAge("refreshToken", 0));
+        code(() -> auth.refresh(first.refreshToken()), "INVALID_CREDENTIALS");
+        code(() -> auth.refresh(other.refresh()), "INVALID_CREDENTIALS");
+        code(
+                () -> changes.requestEmail(member, session, "new@example.com", proof.reauthProof()),
+                "INVALID_CREDENTIALS");
+        assertThat(auth.login("first@example.com", "new password!", "login").member())
+                .isEqualTo(member);
+    }
+
+    @Test
+    void expiredReauthAndChangedTargetOwnershipAreRejected() {
+        var first = signup.signup(UUID.randomUUID(), command(proof("first@example.com"), "첫회원"));
+        UUID member = first.data().member().memberId(), session = sessionId(first);
+        var expired = changes.reauthenticate(member, session, " valid password ", "CHANGE_EMAIL");
+        clock.advance(301);
+        code(
+                () ->
+                        changes.requestEmail(
+                                member, session, "new@example.com", expired.reauthProof()),
+                "INVALID_PROOF");
+        var valid = changes.reauthenticate(member, session, " valid password ", "CHANGE_EMAIL");
+        var issued = changes.requestEmail(member, session, "new@example.com", valid.reauthProof());
+        delivery.processDue();
+        var verified =
+                changes.verifyEmail(
+                        member,
+                        session,
+                        issued.verificationId(),
+                        sent.get("new@example.com").substring(7));
+        signup.signup(UUID.randomUUID(), command(proof("new@example.com"), "둘째회원"));
+        code(
+                () -> changes.completeEmail(member, session, verified.emailChangeProof()),
+                "EMAIL_ALREADY_EXISTS");
+        assertThat(signup.me(member).email()).isEqualTo("first@example.com");
+    }
+
+    @Test
+    void emailChangeHttpFlowAndCodeAttemptLimit() throws Exception {
+        var first = signup.signup(UUID.randomUUID(), command(proof("first@example.com"), "첫회원"));
+        String bearer = "Bearer " + first.data().accessToken();
+        var reauth =
+                mvc.perform(
+                                post("/api/v1/me/reauth/password")
+                                        .header("Authorization", bearer)
+                                        .contentType("application/json")
+                                        .content(
+                                                "{\"password\":\" valid password"
+                                                    + " \",\"purpose\":\"CHANGE_EMAIL\"}"))
+                        .andExpect(status().isOk())
+                        .andReturn()
+                        .getResponse();
+        String proof =
+                mapper.readTree(reauth.getContentAsString())
+                        .path("data")
+                        .path("reauthProof")
+                        .asText();
+        var issued =
+                mvc.perform(
+                                post("/api/v1/me/email-changes")
+                                        .header("Authorization", bearer)
+                                        .contentType("application/json")
+                                        .content(
+                                                mapper.writeValueAsString(
+                                                        Map.of(
+                                                                "newEmail",
+                                                                "new@example.com",
+                                                                "reauthProof",
+                                                                proof))))
+                        .andExpect(status().isAccepted())
+                        .andReturn()
+                        .getResponse();
+        String verification =
+                mapper.readTree(issued.getContentAsString())
+                        .path("data")
+                        .path("verificationId")
+                        .asText();
+        delivery.processDue();
+        String codeValue = sent.get("new@example.com").substring(7);
+        var verified =
+                mvc.perform(
+                                post("/api/v1/me/email-changes/verify")
+                                        .header("Authorization", bearer)
+                                        .contentType("application/json")
+                                        .content(
+                                                mapper.writeValueAsString(
+                                                        Map.of(
+                                                                "verificationId",
+                                                                verification,
+                                                                "code",
+                                                                codeValue))))
+                        .andExpect(status().isOk())
+                        .andReturn()
+                        .getResponse();
+        String emailProof =
+                mapper.readTree(verified.getContentAsString())
+                        .path("data")
+                        .path("emailChangeProof")
+                        .asText();
+        mvc.perform(
+                        org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch(
+                                        "/api/v1/me/email")
+                                .header("Authorization", bearer)
+                                .contentType("application/json")
+                                .content(
+                                        mapper.writeValueAsString(
+                                                Map.of("emailChangeProof", emailProof))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.email").value("new@example.com"));
+        clock.advance(61);
+        UUID member = first.data().member().memberId(), session = sessionId(first);
+        var fresh = changes.reauthenticate(member, session, " valid password ", "CHANGE_EMAIL");
+        var next =
+                changes.requestEmail(member, session, "another@example.com", fresh.reauthProof());
+        delivery.processDue();
+        String actual = sent.get("another@example.com").substring(7),
+                wrong = actual.equals("000000") ? "111111" : "000000";
+        for (int i = 0; i < 5; i++)
+            code(
+                    () -> changes.verifyEmail(member, session, next.verificationId(), wrong),
+                    "INVALID_VERIFICATION");
+        code(
+                () -> changes.verifyEmail(member, session, next.verificationId(), actual),
+                "INVALID_VERIFICATION");
+    }
+
+    @Autowired kr.nospo.member.application.ProfileImageCodec imageCodec;
+
+    @Test
+    void webpIsDecodedAndOversizedDimensionsAreRejected() throws Exception {
+        byte[] webp =
+                Base64.getDecoder()
+                        .decode("UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA");
+        byte[] png = imageCodec.sanitize(webp);
+        assertThat(javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(png)).getWidth())
+                .isEqualTo(1);
+        var image =
+                new java.awt.image.BufferedImage(
+                        4097, 1, java.awt.image.BufferedImage.TYPE_INT_RGB);
+        var output = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(image, "png", output);
+        code(() -> imageCodec.sanitize(output.toByteArray()), "INVALID_IMAGE_DIMENSIONS");
+    }
+
     @TestConfiguration(proxyBeanMethods = false)
     static class TimeConfig {
         @Bean

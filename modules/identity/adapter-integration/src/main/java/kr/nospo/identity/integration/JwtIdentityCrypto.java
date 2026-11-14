@@ -19,6 +19,10 @@ public class JwtIdentityCrypto implements IdentityCrypto {
         this.encoder = encoder;
     }
 
+    public boolean matchesPassword(String password, String hash) {
+        return passwords.matches(password, hash);
+    }
+
     public String hashPassword(String password) {
         return passwords.encode(password);
     }

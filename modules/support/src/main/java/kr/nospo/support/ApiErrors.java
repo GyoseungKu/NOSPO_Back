@@ -23,6 +23,21 @@ public class ApiErrors {
                 Map.of("requestId", UUID.randomUUID()));
     }
 
+    @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
+    ResponseEntity<?> tooLarge(Exception ex) {
+        return ResponseEntity.status(413)
+                .header("Cache-Control", "no-store")
+                .body(body("IMAGE_TOO_LARGE"));
+    }
+
+    @ExceptionHandler(
+            org.springframework.web.multipart.support.MissingServletRequestPartException.class)
+    ResponseEntity<?> missingPart(Exception ex) {
+        return ResponseEntity.badRequest()
+                .header("Cache-Control", "no-store")
+                .body(body("INVALID_REQUEST"));
+    }
+
     @ExceptionHandler(ApiException.class)
     ResponseEntity<?> handle(ApiException ex) {
         var builder = ResponseEntity.status(ex.status()).header("Cache-Control", "no-store");

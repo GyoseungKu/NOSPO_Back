@@ -78,6 +78,7 @@ public class SignupService {
                                 .encodeToString(secrets.hash(command.emailProof()));
         byte[] fingerprint = secrets.fingerprint(mapper.writeValueAsString(command));
         // Password hashing is intentionally outside the DB transaction/locks.
+        guard.rateLimit("signup-proof:" + scope, 10, Duration.ofMinutes(15), clock.instant());
         String passwordHash = identity.passwordHash(command.password());
         return tx.execute(
                 status -> {
@@ -93,6 +94,8 @@ public class SignupService {
                                                 previous.get().response(), scope + ":" + key),
                                         Completed.class);
                         members.get(completed.data().member().memberId());
+                        if (!completed.refreshExpiresAt().minusSeconds(1209600 - 900).isAfter(now))
+                            throw new ApiException(409, "SIGNUP_ALREADY_COMPLETED_LOGIN_REQUIRED");
                         return completed;
                     }
                     var proof = identity.verifyForSignup(command.emailProof(), now);
@@ -136,7 +139,7 @@ public class SignupService {
                 identity.email(memberId),
                 member.phoneNumber(),
                 false,
-                null,
+                member.profileImageUrl(),
                 List.of("EMAIL"),
                 member.createdAt());
     }
