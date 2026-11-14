@@ -50,6 +50,8 @@ public interface IdentityStore {
 
     void createAccount(UUID member, String email, String passwordHash, Instant now);
 
+    void createAccountWithoutPassword(UUID member, String email, Instant now);
+
     void assignOwner(String email, UUID member);
 
     void createSession(UUID member, UUID session, UUID refresh, byte[] hash, Instant now);

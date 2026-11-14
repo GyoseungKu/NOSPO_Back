@@ -8,6 +8,7 @@ import kr.nospo.identity.application.AuthService;
 import kr.nospo.identity.application.PasswordResetService;
 import kr.nospo.identity.contract.AuthResult;
 import kr.nospo.identity.contract.SignupIdentity;
+import kr.nospo.identity.contract.LoginMethods;
 import kr.nospo.member.contract.Members;
 import kr.nospo.support.ApiResponse;
 
@@ -39,6 +40,7 @@ public class AuthController {
     private final PasswordResetService resets;
     private final Members members;
     private final SignupIdentity identity;
+    private final LoginMethods methods;
     private final boolean secure;
     private final Clock clock;
 
@@ -47,12 +49,14 @@ public class AuthController {
             PasswordResetService resets,
             Members members,
             SignupIdentity identity,
+            LoginMethods methods,
             @Value("${nospo.auth.secure-cookie:true}") boolean secure,
             Clock clock) {
         this.auth = auth;
         this.resets = resets;
         this.members = members;
         this.identity = identity;
+        this.methods = methods;
         this.secure = secure;
         this.clock = clock;
     }
@@ -66,7 +70,7 @@ public class AuthController {
                 profile.phoneNumber(),
                 false,
                 profile.profileImageUrl(),
-                List.of("EMAIL"),
+                methods.get(id).loginMethods(),
                 profile.createdAt());
     }
 

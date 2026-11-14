@@ -138,6 +138,8 @@ public class PasswordResetService {
                     var p =
                             store.proof(digest, "PASSWORD_RESET", clock.instant(), true)
                                     .orElseThrow(() -> new ApiException(400, "INVALID_PROOF"));
+                    if (store.member(p.email()).filter(p.member()::equals).isEmpty())
+                        throw new ApiException(400, "INVALID_PROOF");
                     store.changePassword(p.member(), hash, clock.instant());
                     store.consume(p.id(), clock.instant());
                     store.invalidateCredentials(p.member(), clock.instant());

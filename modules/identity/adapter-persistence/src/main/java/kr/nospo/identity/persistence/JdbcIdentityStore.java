@@ -174,6 +174,13 @@ public class JdbcIdentityStore implements IdentityStore {
     }
 
     public void createAccount(UUID member, String email, String password, Instant now) {
+        createAccountWithoutPassword(member, email, now);
+        jdbc.update(
+                "INSERT INTO password_credential(member_id,password_hash,password_changed_at) VALUES (?,?,?)",
+                id(member), password, at(now));
+    }
+
+    public void createAccountWithoutPassword(UUID member, String email, Instant now) {
         try {
             jdbc.update(
                     "INSERT INTO"
@@ -188,12 +195,6 @@ public class JdbcIdentityStore implements IdentityStore {
         } catch (DuplicateKeyException ex) {
             throw new ApiException(409, "EMAIL_ALREADY_EXISTS");
         }
-        jdbc.update(
-                "INSERT INTO password_credential(member_id,password_hash,password_changed_at)"
-                        + " VALUES (?,?,?)",
-                id(member),
-                password,
-                at(now));
     }
 
     public void assignOwner(String email, UUID member) {
@@ -203,7 +204,8 @@ public class JdbcIdentityStore implements IdentityStore {
                 id(member),
                 email);
         jdbc.update(
-                "UPDATE auth_proof SET member_id=? WHERE target_email_key=? AND member_id IS NULL",
+                "UPDATE auth_proof SET member_id=? WHERE target_email_key=? AND member_id IS NULL"
+                        + " AND purpose='SIGNUP'",
                 id(member),
                 email);
         jdbc.update(
@@ -339,7 +341,8 @@ public class JdbcIdentityStore implements IdentityStore {
                 "DELETE FROM email_delivery WHERE status IN ('ACCEPTED','FAILED','CANCELLED') AND"
                         + " payload_expires_at<=?",
                 at(now));
-        jdbc.update("DELETE FROM auth_proof WHERE expires_at<=?", at(now));
+        jdbc.update("DELETE FROM auth_proof WHERE expires_at<=? AND NOT EXISTS"
+                + " (SELECT 1 FROM social_signup_context c WHERE c.proof_id=auth_proof.proof_id)", at(now));
         jdbc.update(
                 "DELETE FROM auth_challenge WHERE expires_at<=? AND NOT EXISTS (SELECT 1 FROM"
                         + " auth_proof p WHERE p.challenge_id=auth_challenge.challenge_id) AND NOT"

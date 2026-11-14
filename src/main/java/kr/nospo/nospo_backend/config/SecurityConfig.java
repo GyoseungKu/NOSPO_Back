@@ -41,6 +41,9 @@ public class SecurityConfig {
                 .csrf(
                         c ->
                                 c.ignoringRequestMatchers(
+                                        "/api/v1/auth/kakao/exchange",
+                                        "/api/v1/auth/signup/kakao",
+                                        "/api/v1/auth/signup/kakao/context",
                                         "/api/v1/me/**",
                                         "/api/v1/auth/signup",
                                         "/api/v1/auth/signup/email-verifications",
@@ -64,12 +67,17 @@ public class SecurityConfig {
                                         .requestMatchers(
                                                 org.springframework.http.HttpMethod.GET,
                                                 "/api/v1/terms",
+                                                "/api/v1/auth/kakao/authorize",
+                                                "/api/v1/auth/kakao/callback",
                                                 "/api/v1/terms/*",
                                                 "/api/v1/auth/availability/*")
                                         .permitAll()
                                         .requestMatchers(
                                                 org.springframework.http.HttpMethod.POST,
                                                 "/api/v1/auth/signup",
+                                                "/api/v1/auth/kakao/exchange",
+                                                "/api/v1/auth/signup/kakao",
+                                                "/api/v1/auth/signup/kakao/context",
                                                 "/api/v1/auth/signup/email-verifications",
                                                 "/api/v1/auth/signup/email-verifications/confirm",
                                                 "/api/v1/auth/login",

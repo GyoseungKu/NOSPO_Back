@@ -1,5 +1,6 @@
 plugins { id 'java-library' }
 dependencies {
+    implementation 'tools.jackson.core:jackson-databind'
     api project(':identity:application')
     api project(':support')
     implementation 'org.springframework.boot:spring-boot-starter-mail'

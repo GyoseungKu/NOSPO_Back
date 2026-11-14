@@ -51,6 +51,141 @@ class EmailSignupTests {
 
     @Autowired kr.nospo.identity.application.AuthService auth;
     @Autowired kr.nospo.identity.application.PasswordResetService resets;
+    @Autowired LoginMethodService loginMethods;
+    @Autowired LoginMethodStore loginMethodStore;
+
+    @Test
+    void loginMethodsReflectEmailKakaoAndCombinedAccounts() throws Exception {
+        var original = signup.signup(UUID.randomUUID(), command(proof("reader@example.com"), "reader"));
+        UUID member = original.data().member().memberId();
+        assertThat(original.data().member().loginMethods()).containsExactly("EMAIL");
+        assertThat(loginMethods.get(member).canLinkKakao()).isTrue();
+        assertThat(loginMethods.get(member).canAddEmail()).isFalse();
+        mvc.perform(get("/api/v1/me/login-methods")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/v1/me/login-methods")
+                        .header("Authorization", "Bearer " + original.data().accessToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.loginMethods[0]").value("EMAIL"))
+                .andExpect(jsonPath("$.data.canAddEmail").value(false))
+                .andExpect(jsonPath("$.data.canLinkKakao").value(true));
+
+        loginMethods.recordVerifiedKakao(member, "12345");
+        assertThat(loginMethodStore.kakaoMember("12345")).contains(member);
+        assertThat(loginMethods.get(member).loginMethods()).containsExactly("EMAIL", "KAKAO");
+        assertThat(loginMethods.get(member).canAddEmail()).isFalse();
+        assertThat(loginMethods.get(member).canLinkKakao()).isFalse();
+        mvc.perform(post("/api/v1/auth/login").contentType("application/json")
+                        .content("{\"email\":\"reader@example.com\",\"password\":\" valid password \"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.member.loginMethods[1]").value("KAKAO"));
+        assertThat(signup.me(member).loginMethods()).containsExactly("EMAIL", "KAKAO");
+
+        // A future Kakao signup creates an account without password_credential.
+        jdbc.update("DELETE FROM password_credential WHERE member_id=?", id(member));
+        mvc.perform(get("/api/v1/me/login-methods")
+                        .header("Authorization", "Bearer " + original.data().accessToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.loginMethods.length()").value(1))
+                .andExpect(jsonPath("$.data.loginMethods[0]").value("KAKAO"))
+                .andExpect(jsonPath("$.data.canAddEmail").value(true))
+                .andExpect(jsonPath("$.data.canLinkKakao").value(false));
+        mvc.perform(get("/api/v1/me")
+                        .header("Authorization", "Bearer " + original.data().accessToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.loginMethods[0]").value("KAKAO"));
+        code(() -> auth.login("reader@example.com", " valid password ", "login"), "INVALID_CREDENTIALS");
+    }
+
+    @Test
+    void kakaoOnlyResetDoesNotSendMailOrCreatePassword() throws Exception {
+        var original = signup.signup(UUID.randomUUID(), command(proof("reader@example.com"), "reader"));
+        UUID member = original.data().member().memberId();
+        loginMethods.recordVerifiedKakao(member, "12345");
+        jdbc.update("DELETE FROM password_credential WHERE member_id=?", id(member));
+        sent.clear();
+        mvc.perform(post("/api/v1/auth/password-resets").contentType("application/json")
+                        .content("{\"email\":\"reader@example.com\"}"))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.data.verificationId").isNotEmpty());
+        delivery.processDue();
+        assertThat(sent).isEmpty();
+        assertThat(count("password_credential")).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM auth_challenge WHERE"
+                + " purpose='PASSWORD_RESET' AND member_id IS NOT NULL", Integer.class)).isZero();
+    }
+
+    @Test
+    void resetCompletionRechecksPasswordCredentialAndRollsBack() {
+        var original = signup.signup(UUID.randomUUID(), command(proof("reader@example.com"), "reader"));
+        UUID member = original.data().member().memberId();
+        var request = resets.request("reader@example.com", "reset");
+        delivery.processDue();
+        var verified = resets.verify(request.verificationId(), sent.get("reader@example.com").substring(6));
+        jdbc.update("DELETE FROM password_credential WHERE member_id=?", id(member));
+        code(() -> resets.complete(verified.resetProof(), "new valid password", "reset"), "INVALID_PROOF");
+        assertThat(count("password_credential")).isZero();
+        // Failed reset must not revoke sessions or consume the proof.
+        assertThat(store.sessionActive(member, sessionId(original), clock.instant())).isTrue();
+        assertThat(jdbc.queryForObject("SELECT consumed_at FROM auth_proof WHERE proof_hash=?",
+                java.sql.Timestamp.class, secrets.hash(verified.resetProof()))).isNull();
+    }
+
+    @Test
+    void kakaoConstraintsAndInactiveMembersAreEnforced() {
+        var first = signup.signup(UUID.randomUUID(), command(proof("first@example.com"), "first"));
+        var second = signup.signup(UUID.randomUUID(), command(proof("second@example.com"), "second"));
+        UUID a = first.data().member().memberId(), b = second.data().member().memberId();
+        loginMethods.recordVerifiedKakao(a, "12345");
+        code(() -> loginMethods.recordVerifiedKakao(b, "12345"), "SOCIAL_ACCOUNT_ALREADY_LINKED");
+        code(() -> loginMethods.recordVerifiedKakao(a, "67890"), "SOCIAL_ACCOUNT_ALREADY_LINKED");
+        code(() -> loginMethods.recordVerifiedKakao(b, ""), "VALIDATION_ERROR");
+        jdbc.update("UPDATE member SET status='WITHDRAWING' WHERE member_id=?", id(b));
+        code(() -> loginMethods.recordVerifiedKakao(b, "67890"), "INVALID_CREDENTIALS");
+        code(() -> loginMethods.get(b), "INVALID_CREDENTIALS");
+        assertThat(count("social_identity")).isEqualTo(1);
+        assertThat(count("credit_transaction")).isEqualTo(2);
+    }
+
+    @Test
+    void concurrentKakaoOwnersHaveExactlyOneWinner() throws Exception {
+        var first = signup.signup(UUID.randomUUID(), command(proof("first@example.com"), "first"));
+        var second = signup.signup(UUID.randomUUID(), command(proof("second@example.com"), "second"));
+        raceKakao(first.data().member().memberId(), "12345", second.data().member().memberId(), "12345");
+    }
+
+    @Test
+    void concurrentKakaoSubjectsForOneMemberHaveExactlyOneWinner() throws Exception {
+        var first = signup.signup(UUID.randomUUID(), command(proof("first@example.com"), "first"));
+        UUID member = first.data().member().memberId();
+        raceKakao(member, "12345", member, "67890");
+    }
+
+    void raceKakao(UUID first, String firstSubject, UUID second, String secondSubject) throws Exception {
+        var ready = new CountDownLatch(2);
+        var start = new CountDownLatch(1);
+        try (var pool = Executors.newFixedThreadPool(2)) {
+            List<Future<String>> results = new ArrayList<>();
+            for (var entry : List.of(Map.entry(first, firstSubject), Map.entry(second, secondSubject))) {
+                results.add(pool.submit(() -> {
+                    ready.countDown();
+                    if (!start.await(10, TimeUnit.SECONDS)) throw new AssertionError("start timeout");
+                    try {
+                        loginMethods.recordVerifiedKakao(entry.getKey(), entry.getValue());
+                        return "OK";
+                    } catch (ApiException e) {
+                        return e.code();
+                    }
+                }));
+            }
+            assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+            assertThat(List.of(results.get(0).get(20, TimeUnit.SECONDS), results.get(1).get(20, TimeUnit.SECONDS)))
+                    .containsExactlyInAnyOrder("OK", "SOCIAL_ACCOUNT_ALREADY_LINKED");
+        } finally {
+            start.countDown();
+        }
+        assertThat(count("social_identity")).isEqualTo(1);
+    }
 
     @Test
     void loginRotationReuseAndLogout() throws Exception {
@@ -512,6 +647,10 @@ class EmailSignupTests {
     void setup() {
         for (String table :
                 List.of(
+                        "social_signup_context",
+                        "oauth_exchange",
+                        "oauth_flow",
+                        "social_identity",
                         "email_delivery",
                         "auth_proof",
                         "auth_challenge",

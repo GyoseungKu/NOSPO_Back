@@ -2,6 +2,7 @@ package kr.nospo.lifecycle.application;
 
 import kr.nospo.credit.contract.SignupCredits;
 import kr.nospo.identity.contract.SignupIdentity;
+import kr.nospo.identity.contract.LoginMethods;
 import kr.nospo.member.contract.Members;
 import kr.nospo.support.*;
 import kr.nospo.terms.contract.Terms;
@@ -28,6 +29,7 @@ public class SignupService {
     public record Completed(SignupResult data, String refreshToken, Instant refreshExpiresAt) {}
 
     private final SignupIdentity identity;
+    private final LoginMethods methods;
     private final Members members;
     private final Terms terms;
     private final SignupCredits credits;
@@ -40,6 +42,7 @@ public class SignupService {
 
     public SignupService(
             SignupIdentity identity,
+            LoginMethods methods,
             Members members,
             Terms terms,
             SignupCredits credits,
@@ -50,6 +53,7 @@ public class SignupService {
             ObjectMapper mapper,
             PlatformTransactionManager manager) {
         this.identity = identity;
+        this.methods = methods;
         this.members = members;
         this.terms = terms;
         this.credits = credits;
@@ -116,7 +120,7 @@ public class SignupService {
                                             member.phoneNumber(),
                                             false,
                                             null,
-                                            List.of("EMAIL"),
+                                            methods.get(member.memberId()).loginMethods(),
                                             now));
                     var completed =
                             new Completed(result, tokens.refreshToken(), tokens.refreshExpiresAt());
@@ -140,7 +144,7 @@ public class SignupService {
                 member.phoneNumber(),
                 false,
                 member.profileImageUrl(),
-                List.of("EMAIL"),
+                methods.get(memberId).loginMethods(),
                 member.createdAt());
     }
 }

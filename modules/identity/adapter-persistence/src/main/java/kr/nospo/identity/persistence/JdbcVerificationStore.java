@@ -61,7 +61,8 @@ public class JdbcVerificationStore implements VerificationStore {
     public Optional<UUID> member(String email) {
         return db
                 .query(
-                        "SELECT a.member_id FROM account a JOIN member m ON a.member_id=m.member_id"
+                        "SELECT a.member_id FROM account a JOIN password_credential p ON"
+                            + " p.member_id=a.member_id JOIN member m ON a.member_id=m.member_id"
                             + " WHERE a.email_key=? AND m.status='ACTIVE'",
                         (r, n) -> uuid(r.getBytes(1)),
                         email)
@@ -87,12 +88,12 @@ public class JdbcVerificationStore implements VerificationStore {
     }
 
     public void changePassword(UUID member, String hash, Instant now) {
-        db.update(
+        if (db.update(
                 "UPDATE password_credential SET password_hash=?,password_changed_at=? WHERE"
                     + " member_id=?",
                 hash,
                 at(now),
-                id(member));
+                id(member)) != 1) throw new ApiException(409, "EMAIL_LOGIN_NOT_ENABLED");
     }
 
     public void changeEmail(UUID member, String email, Instant now) {
