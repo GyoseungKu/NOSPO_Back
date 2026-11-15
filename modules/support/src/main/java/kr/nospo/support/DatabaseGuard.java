@@ -20,6 +20,10 @@ public class DatabaseGuard {
         this.secrets = secrets;
         independent = new TransactionTemplate(manager);
         independent.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        // Missing-key DELETEs at MySQL's default REPEATABLE_READ take gap locks.
+        // Different rate scopes can then deadlock when both insert their first counter.
+        // The guard row already serializes the same scope; range locks are unnecessary.
+        independent.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
     }
 
     // The upsert acquires an exclusive row lock, including when no previous row existed.
@@ -34,6 +38,7 @@ public class DatabaseGuard {
     public void rateLimit(String scope, int limit, Duration window, Instant now) {
         independent.executeWithoutResult(
                 tx -> {
+                    // Always acquire the scope guard before touching its counter.
                     lock("rate:" + scope, now);
                     byte[] key = secrets.fingerprint(scope);
                     jdbc.update(

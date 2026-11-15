@@ -64,9 +64,9 @@ public class KakaoSignupIdentityService implements KakaoSignupIdentity {
         var initial = proof(hash, false);
         // Serializes different proofs for the same provider subject, including the first signup.
         guard.lock("kakao-signup:subject:" + initial.subject(), clock.instant());
-        var proof = proof(hash, true);
-        var context = validContext(proof);
-        if (methods.kakaoMember(proof.subject()).isPresent())
+        initial = proof(hash, false); // A competing request may have consumed it while we waited.
+        var context = validContext(initial);
+        if (methods.kakaoMember(initial.subject()).isPresent())
             throw new ApiException(409, "SOCIAL_ACCOUNT_ALREADY_LINKED");
 
         SignupIdentity.Verified verifiedEmail = null;
@@ -80,6 +80,11 @@ public class KakaoSignupIdentityService implements KakaoSignupIdentity {
             verifiedEmail = identity.verifyForSignup(emailProof, clock.instant());
             email = verifiedEmail.email();
         }
+        // Subject -> email -> proof, shared with email signup's email-before-proof order.
+        // Never wait for an email guard while holding a social proof: owner assignment
+        // by the winning signup may need to inspect other proofs for that email.
+        var proof = proof(hash, true);
+        validContext(proof); // Recheck consumption/expiry after waiting for the guards.
         if (accounts.emailExists(email)) throw new ApiException(409, "EMAIL_ALREADY_EXISTS");
         return new Verified(proof.id(), proof.flowId(), proof.subject(), email, verifiedEmail);
     }

@@ -316,8 +316,14 @@ class KakaoAccountTests extends KakaoOAuthTests {
     void parallelMembersCannotClaimSameKakao() throws Exception {
         var a = emailAccount("first@example.com", "first"); var b = emailAccount("second@example.com", "second");
         String first = linkReady(a, "12345"), second = linkReady(b, "12345");
-        assertThat(race(() -> linkOutcome(a, first, UUID.randomUUID()), () -> linkOutcome(b, second, UUID.randomUUID())))
-                .containsExactlyInAnyOrder("OK", "SOCIAL_ACCOUNT_ALREADY_LINKED");
+        var outcomes = race(() -> linkOutcome(a, first, UUID.randomUUID()), () -> linkOutcome(b, second, UUID.randomUUID()));
+        assertThat(outcomes).containsExactlyInAnyOrder("OK", "SOCIAL_ACCOUNT_ALREADY_LINKED");
+        UUID winner = outcomes.get(0).equals("OK") ? a.member() : b.member();
+        UUID loser = outcomes.get(0).equals("OK") ? b.member() : a.member();
+        assertThat(loginMethodStore.kakaoMember("12345")).contains(winner);
+        assertThat(loginMethods.get(loser).loginMethods()).containsExactly("EMAIL");
+        assertThat(signup.me(a.member()).email()).isEqualTo("first@example.com");
+        assertThat(signup.me(b.member()).email()).isEqualTo("second@example.com");
         assertThat(count("social_identity")).isEqualTo(1);
         assertThat(count("member")).isEqualTo(2); assertThat(count("credit_transaction")).isEqualTo(2);
     }

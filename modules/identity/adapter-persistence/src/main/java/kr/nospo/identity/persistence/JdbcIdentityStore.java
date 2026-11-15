@@ -198,21 +198,28 @@ public class JdbcIdentityStore implements IdentityStore {
     }
 
     public void assignOwner(String email, UUID member) {
-        jdbc.update(
-                "UPDATE auth_challenge SET member_id=? WHERE target_email_key=? AND member_id IS"
-                        + " NULL",
-                id(member),
-                email);
-        jdbc.update(
-                "UPDATE auth_proof SET member_id=? WHERE target_email_key=? AND member_id IS NULL"
-                        + " AND purpose='SIGNUP'",
-                id(member),
-                email);
-        jdbc.update(
-                "UPDATE email_delivery SET member_id=? WHERE challenge_id IN (SELECT challenge_id"
-                        + " FROM auth_challenge WHERE member_id=?) AND member_id IS NULL",
-                id(member),
-                id(member));
+        // The caller holds the email guard. Discover candidates without locking a
+        // scan of every unowned proof/challenge, then update only their primary keys.
+        // A broad UPDATE can wait on another signup's unrelated KAKAO_SIGNUP proof.
+        var challenges = jdbc.query(
+                "SELECT challenge_id FROM auth_challenge WHERE target_email_key=? AND member_id IS NULL"
+                        + " ORDER BY challenge_id", (r, n) -> r.getBytes(1), email);
+        for (byte[] challenge : challenges)
+            jdbc.update("UPDATE auth_challenge SET member_id=? WHERE challenge_id=? AND member_id IS NULL",
+                    id(member), challenge);
+        var proofs = jdbc.query(
+                "SELECT proof_id FROM auth_proof WHERE target_email_key=? AND member_id IS NULL"
+                        + " AND purpose='SIGNUP' ORDER BY proof_id", (r, n) -> r.getBytes(1), email);
+        for (byte[] proof : proofs)
+            jdbc.update("UPDATE auth_proof SET member_id=? WHERE proof_id=? AND member_id IS NULL"
+                    + " AND purpose='SIGNUP'", id(member), proof);
+        var deliveries = jdbc.query(
+                "SELECT d.delivery_id FROM email_delivery d JOIN auth_challenge c ON c.challenge_id=d.challenge_id"
+                        + " WHERE c.member_id=? AND d.member_id IS NULL ORDER BY d.delivery_id",
+                (r, n) -> r.getBytes(1), id(member));
+        for (byte[] delivery : deliveries)
+            jdbc.update("UPDATE email_delivery SET member_id=? WHERE delivery_id=? AND member_id IS NULL",
+                    id(member), delivery);
     }
 
     public void createSession(UUID member, UUID session, UUID refresh, byte[] hash, Instant now) {
