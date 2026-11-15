@@ -104,13 +104,15 @@ class KakaoHttpClientTests {
         String url = client.authorizationUrl("test-state", "https://api.example/api/v1/auth/kakao/callback");
         assertThat(url).startsWith("https://kauth.kakao.com/oauth/authorize?").doesNotContain("test-client-secret");
         assertThat(form(URI.create(url).getRawQuery())).containsEntry("response_type", "code")
+                .containsEntry("scope", "account_email")
                 .containsEntry("state", "test-state").containsEntry("client_id", "test-client-id")
                 .containsEntry("redirect_uri", "https://api.example/api/v1/auth/kakao/callback");
     }
     @Test
     void reauthenticationExplicitlyPromptsLoginWithoutExposingSecret() {
         String url = client.reauthenticationUrl("state", "https://api.example/callback");
-        assertThat(form(URI.create(url).getRawQuery())).containsEntry("prompt", "login").containsEntry("state", "state");
+        assertThat(form(URI.create(url).getRawQuery())).containsEntry("prompt", "login").containsEntry("state", "state")
+                .containsEntry("redirect_uri", "https://api.example/callback").doesNotContainKey("scope");
         assertThat(url).doesNotContain("test-client-secret");
     }
     @Test
@@ -147,6 +149,31 @@ class KakaoHttpClientTests {
         userBody.set("{\"id\":12345}");
         var user = client.identify("code", "https://api.example/callback");
         assertThat(user.email()).isNull(); assertThat(user.emailVerified()).isFalse();
+    }
+    @Test
+    void missingEmailConsentFallsBackAndNewConsentResponseCanProvideVerifiedEmail(CapturedOutput output) {
+        userBody.set("{\"id\":12345,\"kakao_account\":{\"email_needs_agreement\":true}}");
+        var before = client.identify("first-test-code", "https://api.example/callback");
+        assertThat(before.email()).isNull();
+        assertThat(before.emailVerified()).isFalse();
+        userBody.set("{\"id\":12345,\"kakao_account\":{\"email_needs_agreement\":false,"
+                + "\"email\":\"reader@example.com\",\"is_email_valid\":true,\"is_email_verified\":true}}");
+        var after = client.identify("new-test-code", "https://api.example/callback");
+        assertThat(after.email()).isEqualTo("reader@example.com");
+        assertThat(after.emailVerified()).isTrue();
+        assertThat(output.getAll()).doesNotContain("reader@example.com", "test-provider-token", "first-test-code", "new-test-code");
+    }
+    @Test
+    void consentDoesNotReplaceStrictEmailValidityAndVerification() {
+        for (String valid : List.of("true", "false", "null", "\"true\"")) {
+            for (String verified : List.of("true", "false", "null", "\"true\"")) {
+                userBody.set("{\"id\":12345,\"kakao_account\":{\"email_needs_agreement\":false,"
+                        + "\"email\":\"reader@example.com\",\"is_email_valid\":" + valid
+                        + ",\"is_email_verified\":" + verified + "}}");
+                assertThat(client.identify("test-code", "https://api.example/callback").emailVerified())
+                        .isEqualTo(valid.equals("true") && verified.equals("true"));
+            }
+        }
     }
     @Test
     void missingConfigurationDoesNotBreakOtherAuthAndNeverPrintsSecrets() {

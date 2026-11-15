@@ -36,13 +36,19 @@ public class KakaoHttpClient implements KakaoClient {
     private static String enc(String value) { return URLEncoder.encode(value, StandardCharsets.UTF_8); }
 
     public String authorizationUrl(String state, String redirectUri) {
+        // Request missing email consent through Kakao's normal authorization flow.
+        return authorizationBase(state, redirectUri) + "&scope=account_email";
+    }
+
+    private String authorizationBase(String state, String redirectUri) {
         configured();
         return "https://kauth.kakao.com/oauth/authorize?response_type=code&client_id=" + enc(clientId)
                 + "&redirect_uri=" + enc(redirectUri) + "&state=" + enc(state);
     }
 
     public String reauthenticationUrl(String state, String redirectUri) {
-        return authorizationUrl(state, redirectUri) + "&prompt=login";
+        // Reauth/link identify the provider subject; they do not require email consent.
+        return authorizationBase(state, redirectUri) + "&prompt=login";
     }
 
     public User identify(String code, String redirectUri) {

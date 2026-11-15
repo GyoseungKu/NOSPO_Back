@@ -471,6 +471,22 @@ class KakaoOAuthTests extends EmailSignupTests {
     }
 
     @Test
+    void newConsentFlowUsesVerifiedEmailWithoutChangingPreviouslyIssuedSignupProof() {
+        String before = signupProof("98765", null, false);
+        String after = signupProof("98765", "new@example.com", true);
+        var oldContext = kakaoSignupIdentity.context(before);
+        assertThat(oldContext.email()).isNull();
+        assertThat(oldContext.emailVerified()).isFalse();
+        assertThat(oldContext.requiredFields()).contains("emailProof");
+        var newContext = kakaoSignupIdentity.context(after);
+        assertThat(newContext.email()).isEqualTo("new@example.com");
+        assertThat(newContext.emailVerified()).isTrue();
+        assertThat(newContext.requiredFields()).doesNotContain("emailProof");
+        assertThat(count("member")).isZero();
+        assertThat(count("social_identity")).isZero();
+    }
+
+    @Test
     void stateCookieRedirectAndCallbackReplayAreValidatedBeforeProviderCalls() {
         user("98765", null, false);
         var f = begin();
