@@ -15,9 +15,11 @@ import java.util.*;
 @Repository
 public class JdbcVerificationStore implements VerificationStore {
     private final JdbcTemplate db;
+    private final WithdrawalReservations reservations;
 
-    public JdbcVerificationStore(JdbcTemplate db) {
+    public JdbcVerificationStore(JdbcTemplate db, WithdrawalReservations reservations) {
         this.db = db;
+        this.reservations = reservations;
     }
 
     private UUID key(byte[] bytes) {
@@ -71,6 +73,7 @@ public class JdbcVerificationStore implements VerificationStore {
     }
 
     public boolean emailExists(String email) {
+        if (reservations.owner("EMAIL", email).isPresent()) return true;
         return db.queryForObject(
                         "SELECT COUNT(*) FROM account WHERE email_key=?", Integer.class, email)
                 > 0;
@@ -97,6 +100,8 @@ public class JdbcVerificationStore implements VerificationStore {
     }
 
     public void changeEmail(UUID member, String email, Instant now) {
+        reservations.lock("EMAIL", email, now);
+        if (reservations.owner("EMAIL", email).isPresent()) throw new ApiException(409,"EMAIL_ALREADY_EXISTS");
         try {
             db.update(
                     "UPDATE account SET email=?,email_key=?,email_verified_at=?,updated_at=? WHERE"

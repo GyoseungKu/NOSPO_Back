@@ -16,9 +16,11 @@ import java.util.*;
 @Repository
 public class JdbcIdentityStore implements IdentityStore {
     private final JdbcTemplate jdbc;
+    private final WithdrawalReservations reservations;
 
-    public JdbcIdentityStore(JdbcTemplate jdbc) {
+    public JdbcIdentityStore(JdbcTemplate jdbc, WithdrawalReservations reservations) {
         this.jdbc = jdbc;
+        this.reservations = reservations;
     }
 
     private static Instant time(ResultSet r, String field) throws SQLException {
@@ -72,6 +74,7 @@ public class JdbcIdentityStore implements IdentityStore {
     }
 
     public boolean emailExists(String email) {
+        if (reservations.owner("EMAIL", email).isPresent()) return true;
         return jdbc.queryForObject(
                         "SELECT COUNT(*) FROM account WHERE email_key=?", Integer.class, email)
                 > 0;
@@ -181,6 +184,8 @@ public class JdbcIdentityStore implements IdentityStore {
     }
 
     public void createAccountWithoutPassword(UUID member, String email, Instant now) {
+        reservations.lock("EMAIL", email, now);
+        if (reservations.owner("EMAIL", email).isPresent()) throw new ApiException(409, "EMAIL_ALREADY_EXISTS");
         try {
             jdbc.update(
                     "INSERT INTO"
@@ -223,6 +228,8 @@ public class JdbcIdentityStore implements IdentityStore {
     }
 
     public void createSession(UUID member, UUID session, UUID refresh, byte[] hash, Instant now) {
+        if (jdbc.query("SELECT member_id FROM member WHERE member_id=? AND status='ACTIVE' FOR UPDATE",
+                (r,n)->r.getBytes(1), id(member)).isEmpty()) throw new ApiException(401,"INVALID_CREDENTIALS");
         jdbc.update(
                 "INSERT INTO auth_session(session_id,member_id,created_at,expires_at) VALUES"
                         + " (?,?,?,?)",
@@ -243,8 +250,9 @@ public class JdbcIdentityStore implements IdentityStore {
 
     public boolean sessionActive(UUID member, UUID session, Instant now) {
         return jdbc.queryForObject(
-                        "SELECT COUNT(*) FROM auth_session WHERE session_id=? AND member_id=? AND"
-                                + " revoked_at IS NULL AND expires_at>?",
+                        "SELECT COUNT(*) FROM auth_session s JOIN member m ON m.member_id=s.member_id"
+                                + " WHERE s.session_id=? AND s.member_id=? AND m.status='ACTIVE'"
+                                + " AND s.revoked_at IS NULL AND s.expires_at>?",
                         Integer.class,
                         id(session),
                         id(member),

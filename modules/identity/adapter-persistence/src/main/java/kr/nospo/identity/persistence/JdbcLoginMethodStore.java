@@ -14,9 +14,11 @@ import java.util.*;
 @Repository
 public class JdbcLoginMethodStore implements LoginMethodStore {
     private final JdbcTemplate db;
+    private final WithdrawalReservations reservations;
 
-    public JdbcLoginMethodStore(JdbcTemplate db) {
+    public JdbcLoginMethodStore(JdbcTemplate db, WithdrawalReservations reservations) {
         this.db = db;
+        this.reservations = reservations;
     }
 
     public Optional<Methods> methods(UUID member) {
@@ -30,6 +32,8 @@ public class JdbcLoginMethodStore implements LoginMethodStore {
     }
 
     public Optional<UUID> kakaoMember(String subject) {
+        var retained = reservations.owner("KAKAO", subject);
+        if (retained.isPresent()) return retained;
         return db.query(
                 "SELECT member_id FROM social_identity WHERE provider='KAKAO' AND provider_subject=?",
                 (r, n) -> uuid(r.getBytes(1)), subject)
@@ -45,6 +49,8 @@ public class JdbcLoginMethodStore implements LoginMethodStore {
     }
 
     public void insertKakao(UUID member, String subject, Instant now) {
+        reservations.lock("KAKAO", subject, now);
+        if (reservations.owner("KAKAO", subject).isPresent()) throw new ApiException(409,"SOCIAL_ACCOUNT_ALREADY_LINKED");
         try {
             db.update("INSERT INTO social_identity"
                             + " (social_identity_id,member_id,provider,provider_subject,linked_at)"

@@ -647,6 +647,10 @@ class EmailSignupTests {
     void setup() {
         for (String table :
                 List.of(
+                        "withdrawal_target",
+                        "withdrawal_identity",
+                        "withdrawal_archive",
+                        "withdrawal_operation",
                         "social_signup_context",
                         "oauth_exchange",
                         "oauth_flow",
