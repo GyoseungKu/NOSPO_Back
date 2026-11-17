@@ -33,4 +33,8 @@ public class MemberService implements Members {
     public boolean active(UUID member) {
         return store.active(member);
     }
+
+    public void lockActive(UUID member) {
+        store.lockActive(member);
+    }
 }

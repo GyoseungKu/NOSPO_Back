@@ -70,4 +70,11 @@ public class JdbcMembers implements MemberStore {
                         id(member))
                 == 1;
     }
+
+    public void lockActive(UUID member) {
+        var states = jdbc.query("SELECT status FROM member WHERE member_id=? FOR UPDATE",
+                (rs, n) -> rs.getString(1), id(member));
+        if (states.size() != 1 || !"ACTIVE".equals(states.get(0)))
+            throw new ApiException(401, "INVALID_CREDENTIALS");
+    }
 }

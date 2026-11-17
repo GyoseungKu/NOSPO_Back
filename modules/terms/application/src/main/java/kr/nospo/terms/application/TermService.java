@@ -30,7 +30,9 @@ public class TermService implements Terms {
 
     @Transactional
     public void recordSignup(UUID member, List<Consent> consents, Instant now) {
-        var versions = store.current(now, true);
+        store.lock();
+        Instant checkedAt = clock.instant();
+        var versions = store.current(checkedAt, false);
         if (versions.stream().noneMatch(v -> v.type().equals("SERVICE") && v.required())
                 || versions.stream().noneMatch(v -> v.type().equals("PRIVACY") && v.required()))
             throw new ApiException(503, "TERMS_NOT_CONFIGURED");
@@ -51,6 +53,6 @@ public class TermService implements Terms {
         if (!currentIds.equals(inputs.keySet())) throw new ApiException(422, "VALIDATION_ERROR");
         if (versions.stream().anyMatch(v -> v.required() && !inputs.get(v.termVersionId())))
             throw new ApiException(422, "REQUIRED_CONSENT_MISSING");
-        consents.forEach(c -> store.save(member, c, now));
+        consents.forEach(c -> store.save(member, c, checkedAt));
     }
 }

@@ -18,4 +18,7 @@ public interface Members {
     Profile get(UUID memberId);
 
     boolean active(UUID memberId);
+
+    /** Requires a caller transaction; serializes member-owned writes with lifecycle changes. */
+    void lockActive(UUID memberId);
 }

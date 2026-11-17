@@ -6,7 +6,11 @@ import java.time.Instant;
 import java.util.*;
 
 public interface TermStore {
+    void lock();
+
     List<Version> current(Instant now, boolean lock);
+
+    List<Version> effective(Instant now);
 
     Optional<Detail> detail(UUID id, Instant now);
 

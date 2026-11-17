@@ -13,4 +13,6 @@ public interface MemberStore {
     Profile get(UUID memberId);
 
     boolean active(UUID memberId);
+
+    void lockActive(UUID memberId);
 }

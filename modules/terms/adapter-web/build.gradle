@@ -4,4 +4,6 @@ dependencies {
     api project(':support')
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.security:spring-security-core'
+    implementation 'org.springframework.security:spring-security-oauth2-jose'
 }
