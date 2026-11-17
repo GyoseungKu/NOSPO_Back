@@ -112,9 +112,9 @@ class WithdrawalTests extends KakaoAccountTests {
         assertThat(store.sessionActive(other.member(),other.session(),clock.instant())).isTrue();
         assertThat(count("credit_wallet")).isEqualTo(2);assertThat(count("credit_transaction")).isEqualTo(2);
         user("12345","kakao@example.com",true);
-        code(()->oauth.exchange(callback(begin()),null,null,"test"),"INVALID_CREDENTIALS");
+        assertThat(oauth.exchange(callback(begin()),null,null,"test").data().get("result")).isEqualTo("RECOVERY_REQUIRED");
         code(()->loginMethods.recordVerifiedKakao(other.member(),"12345"),"SOCIAL_ACCOUNT_ALREADY_LINKED");
-        // No recovery/purge API exists yet: deadline never silently permits a duplicate signup.
+        // The deadline never silently permits a duplicate signup.
         clock.advance(30*86400);
         assertThat(store.emailExists("kakao@example.com")).isTrue();
         assertThat(count("member")).isEqualTo(2);

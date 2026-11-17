@@ -1,0 +1,6 @@
+plugins { id 'java-library' }
+dependencies {
+    api project(':account-lifecycle:application')
+    implementation 'org.springframework.boot:spring-boot-autoconfigure'
+    implementation 'org.springframework:spring-context'
+}

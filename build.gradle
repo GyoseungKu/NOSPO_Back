@@ -94,4 +94,5 @@ dependencies {
     implementation project(':account-lifecycle:application')
     implementation project(':account-lifecycle:adapter-persistence')
     implementation project(':account-lifecycle:adapter-web')
+    implementation project(':account-lifecycle:adapter-worker')
 }

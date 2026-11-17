@@ -60,6 +60,11 @@ public class SmtpEmailSender implements EmailSender {
             message.setText("아래 페이지에서 이메일 로그인을 추가해 주세요. 링크 유효기간은 10분입니다.\n"
                     + confirmUrl + "#purpose=ADD_EMAIL_LOGIN&token=" + token.substring(6));
         }
+        if (token.startsWith("RECOVERY:")) {
+            message.setSubject("NOSPO 계정 복구 인증");
+            message.setText("계정 복구 인증을 완료해 주세요. 링크는 최대 10분 동안 유효합니다.\n"
+                    + confirmUrl + "#purpose=ACCOUNT_RECOVERY&token=" + token.substring(9));
+        }
         try {
             mail.send(message);
         } catch (MailException ex) {

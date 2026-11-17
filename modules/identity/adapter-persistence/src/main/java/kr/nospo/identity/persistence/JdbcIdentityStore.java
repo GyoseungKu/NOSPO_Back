@@ -313,14 +313,18 @@ public class JdbcIdentityStore implements IdentityStore {
                             + " m.member_id=d.member_id WHERE d.delivery_id=? AND d.lease_token=?"
                             + " AND d.status='PROCESSING' AND d.cancellation_requested_at IS NULL"
                             + " AND d.payload_expires_at>? AND c.expires_at>? AND c.invalidated_at"
-                            + " IS NULL AND c.verified_at IS NULL AND (d.member_id IS NULL OR"
-                            + " m.status='ACTIVE') AND (c.purpose<>'EMAIL_LOGIN' OR EXISTS"
+                            + " IS NULL AND c.verified_at IS NULL AND ((c.purpose='RECOVERY' AND EXISTS"
+                            + " (SELECT 1 FROM withdrawal_operation o JOIN member retained ON retained.member_id=o.member_id"
+                            + " WHERE o.operation_id=c.withdrawal_operation_id AND o.member_id=c.member_id AND retained.status='WITHDRAWN'"
+                            + " AND retained.withdrawal_generation=o.generation AND o.status='RETAINED' AND o.recoverable_until>?))"
+                            + " OR (c.purpose<>'RECOVERY' AND (d.member_id IS NULL OR m.status='ACTIVE'))) AND (c.purpose<>'EMAIL_LOGIN' OR EXISTS"
                             + " (SELECT 1 FROM account a JOIN auth_session s ON s.member_id=a.member_id"
                             + " WHERE a.member_id=c.member_id AND a.email_key=c.target_email_key"
                             + " AND s.session_id=c.session_id AND s.revoked_at IS NULL AND s.expires_at>?))",
                         Integer.class,
                         id(job.id()),
                         id(job.lease()),
+                        at(now),
                         at(now),
                         at(now),
                         at(now))

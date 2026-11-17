@@ -14,6 +14,15 @@ import org.springframework.mail.javamail.JavaMailSender;
 
 class SmtpEmailSenderTests {
     @Test
+    void recoveryMailUsesPurposeFragmentAndNeverPlacesTokenInQuery() {
+        var mail=mock(JavaMailSender.class);
+        var sender=new SmtpEmailSender(mail,"noreply@example.com","https://nospo.example/auth/confirm");
+        sender.send("reader@example.com","RECOVERY:test-token");
+        var message=org.mockito.ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mail).send(message.capture());
+        assertThat(message.getValue().getText()).contains("#purpose=ACCOUNT_RECOVERY&token=test-token").doesNotContain("RECOVERY:","?token=");
+    }
+    @Test
     void emailLoginLinkUsesPurposeFragmentAndRawTokenWithoutLoginPrefix() {
         var mail = mock(JavaMailSender.class);
         var sender = new SmtpEmailSender(mail, "noreply@example.com", "https://nospo.example/auth/confirm");

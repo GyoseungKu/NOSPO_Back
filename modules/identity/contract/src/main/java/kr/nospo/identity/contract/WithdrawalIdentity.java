@@ -8,4 +8,5 @@ public interface WithdrawalIdentity {
     void verify(UUID member, UUID session, byte[] proofHash, Instant now);
     byte[] snapshot(UUID member);
     void retain(UUID operation, UUID member, Instant now);
+    void restore(UUID member, byte[] snapshot, String newPasswordHash, Instant now);
 }

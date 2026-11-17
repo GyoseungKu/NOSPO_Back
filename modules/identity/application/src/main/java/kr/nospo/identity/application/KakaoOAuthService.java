@@ -40,17 +40,19 @@ public class KakaoOAuthService {
     private final Members members;
     private final DatabaseGuard guard;
     private final KakaoAccountService accountActions;
+    private final RecoveryIdentity recovery;
     private final TransactionTemplate tx;
 
     public KakaoOAuthService(KakaoOAuthStore store, KakaoClient client, KakaoOAuthSettings settings,
             Secrets secrets, Clock clock, ObjectMapper mapper, SignupIdentity identity,
             LoginMethodStore loginStore, LoginMethods methods, IdentityStore accounts,
-            Members members, DatabaseGuard guard, KakaoAccountService accountActions, PlatformTransactionManager manager) {
+            Members members, DatabaseGuard guard, KakaoAccountService accountActions, RecoveryIdentity recovery, PlatformTransactionManager manager) {
         this.store = store; this.client = client; this.settings = settings; this.secrets = secrets;
         this.clock = clock; this.mapper = mapper; this.identity = identity;
         this.loginStore = loginStore; this.methods = methods; this.accounts = accounts;
         this.members = members; this.guard = guard;
         this.accountActions = accountActions;
+        this.recovery = recovery;
         tx = new TransactionTemplate(manager);
         tx.setIsolationLevel(org.springframework.transaction.TransactionDefinition.ISOLATION_READ_COMMITTED);
     }
@@ -141,6 +143,12 @@ public class KakaoOAuthService {
             store.consumeExchange(e.id(), now);
             if (!"LOGIN".equals(e.flow().type()))
                 return accountActions.exchange(e.flow(), user, member, session);
+            var recoveryProof = recovery.kakao(user.subject(),now);
+            if(recoveryProof.isPresent()) {
+                var issued=recoveryProof.get();
+                return new Exchanged(Map.of("result","RECOVERY_REQUIRED","recoveryProof",issued.recoveryProof(),
+                        "expiresAt",issued.expiresAt(),"returnPath",e.flow().returnPath()),null,null);
+            }
             var linked = loginStore.kakaoMember(user.subject());
             if (linked.isPresent()) {
                 UUID id = linked.get();

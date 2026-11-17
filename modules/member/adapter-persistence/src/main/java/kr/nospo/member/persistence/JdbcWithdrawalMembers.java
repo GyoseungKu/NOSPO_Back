@@ -31,4 +31,14 @@ public class JdbcWithdrawalMembers implements WithdrawalMembers {
                 +"recoverable_until=?,updated_at=? WHERE member_id=? AND status='ACTIVE'",
                 at(now),at(deadline),at(now),id(member))!=1) throw new ApiException(401,"INVALID_CREDENTIALS");
     }
+    public void restore(UUID member,byte[] snapshot,Instant now) {
+        var root=mapper.readTree(snapshot);
+        var profile=ArchivedRow.part(mapper,root,"member").get(0);
+        try {
+            db.update("UPDATE member SET nickname=?,nickname_key=?,phone_number=?,profile_image_key=?,status='ACTIVE',withdrawn_at=NULL,recoverable_until=NULL,updated_at=? WHERE member_id=?",
+                    ArchivedRow.text(profile,"nickname"),ArchivedRow.text(profile,"nickname_key"),ArchivedRow.text(profile,"phone_number"),ArchivedRow.text(profile,"profile_image_key"),at(now),id(member));
+            for(var image:ArchivedRow.part(mapper,root,"images"))
+                db.update("INSERT INTO member_profile_image(member_id,png_data,updated_at) VALUES (?,?,?)",id(member),ArchivedRow.binary(image,"png_data"),ArchivedRow.time(image,"updated_at"));
+        } catch(org.springframework.dao.DuplicateKeyException ex) {throw new ApiException(409,"RECOVERY_PROFILE_CONFLICT");}
+    }
 }

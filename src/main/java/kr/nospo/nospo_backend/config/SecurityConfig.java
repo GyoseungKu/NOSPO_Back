@@ -41,6 +41,9 @@ public class SecurityConfig {
                 .csrf(
                         c ->
                                 c.ignoringRequestMatchers(
+                                        "/api/v1/auth/recovery/complete",
+                                        "/api/v1/auth/recovery/email-verifications",
+                                        "/api/v1/auth/recovery/email-verifications/confirm",
                                         "/api/v1/auth/kakao/exchange",
                                         "/api/v1/auth/signup/kakao",
                                         "/api/v1/auth/signup/kakao/context",
@@ -74,6 +77,9 @@ public class SecurityConfig {
                                         .permitAll()
                                         .requestMatchers(
                                                 org.springframework.http.HttpMethod.POST,
+                                                "/api/v1/auth/recovery/complete",
+                                                "/api/v1/auth/recovery/email-verifications",
+                                                "/api/v1/auth/recovery/email-verifications/confirm",
                                                 "/api/v1/auth/signup",
                                                 "/api/v1/auth/kakao/exchange",
                                                 "/api/v1/auth/signup/kakao",

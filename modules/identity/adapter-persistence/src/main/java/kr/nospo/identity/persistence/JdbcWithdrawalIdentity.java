@@ -77,4 +77,26 @@ public class JdbcWithdrawalIdentity implements WithdrawalIdentity {
         db.update("DELETE FROM password_credential WHERE member_id=?",id(member));
         db.update("UPDATE account SET email=NULL,email_key=NULL,updated_at=? WHERE member_id=?",at(now),id(member));
     }
+    public void restore(UUID member,byte[] snapshot,String newPasswordHash,Instant now) {
+        var root=mapper.readTree(snapshot);
+        var account=ArchivedRow.part(mapper,root,"account").get(0);
+        try {
+            db.update("UPDATE account SET email=?,email_key=?,email_verified_at=?,updated_at=? WHERE member_id=?",
+                    ArchivedRow.text(account,"email"),ArchivedRow.text(account,"email_key"),ArchivedRow.time(account,"email_verified_at"),at(now),id(member));
+            var passwords=ArchivedRow.part(mapper,root,"password_credential");
+            if(newPasswordHash!=null || !passwords.isEmpty()) {
+                String hash=newPasswordHash!=null?newPasswordHash:ArchivedRow.text(passwords.get(0),"password_hash");
+                db.update("INSERT INTO password_credential(member_id,password_hash,password_changed_at) VALUES (?,?,?)",id(member),hash,
+                        newPasswordHash!=null?at(now):ArchivedRow.time(passwords.get(0),"password_changed_at"));
+            }
+            for(var social:ArchivedRow.part(mapper,root,"social_identity"))
+                db.update("INSERT INTO social_identity(social_identity_id,member_id,provider,provider_subject,linked_at) VALUES (?,?,?,?,?)",
+                        ArchivedRow.binary(social,"social_identity_id"),id(member),ArchivedRow.text(social,"provider"),ArchivedRow.text(social,"provider_subject"),ArchivedRow.time(social,"linked_at"));
+        } catch(org.springframework.dao.DuplicateKeyException ex) {throw new ApiException(409,"RECOVERY_IDENTITY_CONFLICT");}
+        // Old challenges/proofs and sessions remain invalid. Cancel any pending recovery mail.
+        db.update("UPDATE auth_challenge SET invalidated_at=COALESCE(invalidated_at,?),target_email='',target_email_key='' WHERE member_id=?",at(now),id(member));
+        db.update("UPDATE auth_proof SET invalidated_at=COALESCE(invalidated_at,?) WHERE member_id=?",at(now),id(member));
+        db.update("UPDATE email_delivery SET status='CANCELLED',payload_ciphertext=NULL,payload_key_id=NULL,finished_at=?,cancellation_requested_at=?,lease_token=NULL,lease_until=NULL,updated_at=?"
+                +" WHERE challenge_id IN (SELECT challenge_id FROM auth_challenge WHERE member_id=?) AND status IN ('PENDING','PROCESSING')",at(now),at(now),at(now),id(member));
+    }
 }

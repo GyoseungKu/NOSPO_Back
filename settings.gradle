@@ -75,3 +75,6 @@ include ':member:adapter-web'
 project(':member:adapter-web').projectDir = file('modules/member/adapter-web')
 include ':member:adapter-integration'
 project(':member:adapter-integration').projectDir = file('modules/member/adapter-integration')
+
+include ':account-lifecycle:adapter-worker'
+project(':account-lifecycle:adapter-worker').projectDir = file('modules/account-lifecycle/adapter-worker')
