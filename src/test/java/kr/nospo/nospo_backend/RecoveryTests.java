@@ -61,8 +61,13 @@ class RecoveryTests extends KakaoAccountTests {
         var a=emailAccount("boundary@example.com","boundary");withdraw(a);
         clock.advance(30*86400-1);
         String proof=recoveryProof("boundary@example.com");
+        assertThat(signup.nicknameAvailable("boundary")).isFalse();
         clock.advance(1);
         code(()->recover(proof),"ACCOUNT_NOT_RECOVERABLE");
+        assertThat(signup.nicknameAvailable("boundary")).isFalse();
+        clock.now.set(clock.instant().plusNanos(1000));
+        code(()->recover(proof),"ACCOUNT_NOT_RECOVERABLE");
+        assertThat(signup.nicknameAvailable("boundary")).isFalse();
         assertThat(count("withdrawal_archive")).isEqualTo(1);
         assertThat(jdbc.queryForObject("SELECT status FROM member",String.class)).isEqualTo("WITHDRAWN");
     }
@@ -175,8 +180,29 @@ class RecoveryTests extends KakaoAccountTests {
         assertThat(recover(recoveryEvidence.confirm(second).recoveryProof()).data().member().memberId()).isEqualTo(a.member());
     }
     @Test
-    void proofRestoresOnlyItsOwnerAndNicknameConflictRollsBack() {
+    void reservedNicknameBlocksSignupAndChangeBeforeAndAfterRecovery() throws Exception {
+        var owner=emailAccount("reserved@example.com","Reserved");
+        var other=emailAccount("editor@example.com","editor");
+        String signupProof=proof("newreader@example.com");
+        var command=command(signupProof," reserved ");
+        code(()->signup.signup(UUID.randomUUID(),command),"NICKNAME_ALREADY_EXISTS");
+        withdraw(owner);
+        mvc.perform(get("/api/v1/auth/availability/nickname").param("nickname"," RESERVED "))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.available").value(false));
+        code(()->signup.signup(UUID.randomUUID(),command),"NICKNAME_ALREADY_EXISTS");
+        code(()->profiles.nickname(other.member(),other.session(),"RESERVED"),"NICKNAME_ALREADY_EXISTS");
+        var restored=recover(recoveryProof("reserved@example.com")).data().member();
+        assertThat(restored.memberId()).isEqualTo(owner.member());
+        assertThat(restored.nickname()).isEqualTo("Reserved");
+        code(()->signup.signup(UUID.randomUUID(),command),"NICKNAME_ALREADY_EXISTS");
+        code(()->profiles.nickname(other.member(),other.session(),"reserved"),"NICKNAME_ALREADY_EXISTS");
+    }
+
+    @Test
+    void legacyNicknameConflictRollsBackAndOwnerCanRetryAfterConflictIsResolved() {
         var a=emailAccount("owner@example.com","owner");withdraw(a);
+        // Simulate a withdrawal made before nickname keys were retained.
+        jdbc.update("UPDATE member SET nickname_key=NULL WHERE member_id=?",id(a.member()));
         var b=emailAccount("other@example.com","owner");
         String proof=recoveryProof("owner@example.com");
         code(()->recover(proof),"RECOVERY_PROFILE_CONFLICT");

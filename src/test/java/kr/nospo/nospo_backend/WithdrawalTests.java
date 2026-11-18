@@ -60,8 +60,9 @@ class WithdrawalTests extends KakaoAccountTests {
                 .andExpect(status().isNoContent()).andExpect(content().string(""))
                 .andExpect(cookie().maxAge("refreshToken",0)).andExpect(cookie().httpOnly("refreshToken",true));
         retained(a);
-        for(String column:List.of("nickname","nickname_key","phone_number","profile_image_key"))
+        for(String column:List.of("nickname","phone_number","profile_image_key"))
             assertThat(jdbc.queryForObject("SELECT "+column+" FROM member WHERE member_id=?",String.class,id(a.member()))).isNull();
+        assertThat(jdbc.queryForObject("SELECT nickname_key FROM member WHERE member_id=?",String.class,id(a.member()))).isEqualTo("withdraw");
         assertThat(jdbc.queryForObject("SELECT email FROM account WHERE member_id=?",String.class,id(a.member()))).isNull();
         assertThat(jdbc.queryForObject("SELECT email_key FROM account WHERE member_id=?",String.class,id(a.member()))).isNull();
         for(String table:List.of("password_credential","social_identity","member_profile_image","member_consent","oauth_flow","oauth_exchange","social_signup_context","idempotency_record"))
@@ -245,7 +246,7 @@ class WithdrawalTests extends KakaoAccountTests {
         withdraw(a,UUID.randomUUID(),passwordProof(a,"WITHDRAWAL"));
         withdraw(b,UUID.randomUUID(),passwordProof(b,"WITHDRAWAL"));
         assertThat(count("withdrawal_operation")).isEqualTo(2);assertThat(count("withdrawal_archive")).isEqualTo(2);
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM member WHERE status='WITHDRAWN' AND nickname_key IS NULL",Integer.class)).isEqualTo(2);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM member WHERE status='WITHDRAWN' AND nickname_key IS NOT NULL",Integer.class)).isEqualTo(2);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM account WHERE email IS NULL AND email_key IS NULL",Integer.class)).isEqualTo(2);
         assertThat(count("withdrawal_identity")).isEqualTo(2);assertThat(count("credit_transaction")).isEqualTo(2);
         assertThat(jdbc.queryForObject("SELECT SUM(balance) FROM credit_wallet",Integer.class)).isEqualTo(10);

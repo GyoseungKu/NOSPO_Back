@@ -68,7 +68,7 @@ configure(subprojects.findAll { it.buildFile.exists() }) {
     tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8'; options.compilerArgs += '-parameters' }
 }
 dependencies {
-    testRuntimeOnly 'com.h2database:h2'
+    testRuntimeOnly 'com.h2database:h2:2.5.250'
     testImplementation 'org.eclipse.angus:angus-mail'
     implementation project(':support')
     implementation project(':member:contract')

@@ -26,7 +26,8 @@ public class JdbcWithdrawalMembers implements WithdrawalMembers {
     }
     public void retain(UUID member, Instant now, Instant deadline) {
         db.update("DELETE FROM member_profile_image WHERE member_id=?",id(member));
-        if(db.update("UPDATE member SET status='WITHDRAWN',nickname=NULL,nickname_key=NULL,phone_number=NULL,"
+        // Keep the unique nickname key reserved until the retained member row is purged.
+        if(db.update("UPDATE member SET status='WITHDRAWN',nickname=NULL,phone_number=NULL,"
                 +"profile_image_key=NULL,withdrawal_generation=withdrawal_generation+1,withdrawn_at=?,"
                 +"recoverable_until=?,updated_at=? WHERE member_id=? AND status='ACTIVE'",
                 at(now),at(deadline),at(now),id(member))!=1) throw new ApiException(401,"INVALID_CREDENTIALS");

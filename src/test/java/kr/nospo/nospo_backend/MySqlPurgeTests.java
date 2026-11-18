@@ -120,6 +120,7 @@ class MySqlPurgeTests extends RecoveryTests {
         var a=emailAccount("rollbackpurge@example.com","rollbackpurge");expired(a);
         doAnswer(i->{i.callRealMethod();throw new IllegalStateException("INJECTED_PURGE_FAILURE");}).when(purgeMembers).delete(any(),anyLong());
         assertThat(purger.processBatch()).isZero();
+        assertThat(signup.nicknameAvailable("rollbackpurge")).isFalse();
         assertThat(owned("member",a.member())).isEqualTo(1);assertThat(owned("credit_wallet",a.member())).isEqualTo(1);
         assertThat(owned("credit_transaction",a.member())).isEqualTo(1);assertThat(owned("account",a.member())).isEqualTo(1);
         assertThat(owned("auth_session",a.member())).isEqualTo(1);assertThat(count("refresh_token")).isEqualTo(1);
@@ -153,6 +154,70 @@ class MySqlPurgeTests extends RecoveryTests {
             assertThat(purge.get(30,TimeUnit.SECONDS)).isEqualTo(1);absent(a.member());
         }
     }
+    @Test void signupAndProfileChangeCannotTakeNicknameDuringRecovery() throws Exception {
+        var owner=emailAccount("reservedrace@example.com","ReservedRace");
+        var editor=emailAccount("editrace@example.com","editrace");
+        withdraw(owner);
+        var signupCommand=command(proof("newrace@example.com"),"reservedrace");
+        String recoveryProof=recoveryProof("reservedrace@example.com");
+        var start=new CountDownLatch(1);
+        try(var pool=Executors.newFixedThreadPool(3)) {
+            var join=pool.submit(()->{
+                start.await();
+                code(()->signup.signup(UUID.randomUUID(),signupCommand),"NICKNAME_ALREADY_EXISTS");
+                return null;
+            });
+            var edit=pool.submit(()->{
+                start.await();
+                code(()->profiles.nickname(editor.member(),editor.session(),"RESERVEDRACE"),"NICKNAME_ALREADY_EXISTS");
+                return null;
+            });
+            var restore=pool.submit(()->{start.await();return recover(recoveryProof).data().member();});
+            start.countDown();
+            join.get(30,TimeUnit.SECONDS);
+            edit.get(30,TimeUnit.SECONDS);
+            var restored=restore.get(30,TimeUnit.SECONDS);
+            assertThat(restored.memberId()).isEqualTo(owner.member());
+            assertThat(restored.nickname()).isEqualTo("ReservedRace");
+        }
+        assertThat(count("member")).isEqualTo(2);
+        assertThat(count("credit_transaction")).isEqualTo(2);
+    }
+
+    @Test void signupAndFinalPurgeRaceReleasesNicknameOnlyAtCommit() throws Exception {
+        var owner=emailAccount("purgerelease@example.com","released");
+        expired(owner);
+        var lease=purger.claim(candidate(owner)).orElseThrow();
+        var command=command(proof("releasednew@example.com"),"released");
+        code(()->signup.signup(UUID.randomUUID(),command),"NICKNAME_ALREADY_EXISTS");
+        var deleted=new CountDownLatch(1);
+        var allowCommit=new CountDownLatch(1);
+        doAnswer(invocation->{
+            invocation.callRealMethod();
+            deleted.countDown();
+            if(!allowCommit.await(15,TimeUnit.SECONDS)) throw new IllegalStateException("PURGE_TEST_TIMEOUT");
+            return null;
+        }).when(purgeMembers).delete(eq(owner.member()),anyLong());
+        try(var pool=Executors.newFixedThreadPool(2)) {
+            var purge=pool.submit(()->purger.complete(lease));
+            try {
+                assertThat(deleted.await(15,TimeUnit.SECONDS)).isTrue();
+                assertThat(signup.nicknameAvailable("released")).isFalse();
+                var join=pool.submit(()->signup.signup(UUID.randomUUID(),command));
+                allowCommit.countDown();
+                assertThat(purge.get(30,TimeUnit.SECONDS)).isTrue();
+                var fresh=join.get(30,TimeUnit.SECONDS).data().member();
+                assertThat(fresh.memberId()).isNotEqualTo(owner.member());
+                assertThat(fresh.nickname()).isEqualTo("released");
+                assertThat(owned("credit_transaction",fresh.memberId())).isEqualTo(1);
+            } finally {
+                allowCommit.countDown();
+            }
+        }
+        absent(owner.member());
+        assertThat(count("member")).isEqualTo(1);
+    }
+
     @Test void signupAndPurgeRacePreservesNewMemberAndReward() throws Exception {
         var a=emailAccount("signuprace@example.com","signuprace");expired(a);
         var old=purger.claim(candidate(a)).orElseThrow();assertThat(purger.complete(old)).isTrue();
