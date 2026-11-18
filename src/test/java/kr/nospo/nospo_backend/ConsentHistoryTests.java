@@ -56,6 +56,134 @@ class ConsentHistoryTests extends RecoveryTests {
                 .content(mapper.writeValueAsString(Map.of("consents",choices))));
     }
 
+
+    org.springframework.test.web.servlet.ResultActions updateNickname(String authorization) throws Exception {
+        return mvc.perform(patch("/api/v1/me/nickname").header("Authorization",authorization)
+                .contentType("application/json").content("{\"nickname\":\"new_reader\"}"));
+    }
+
+    @Test void accessGateUsesCurrentTermsWithTheSameTokenAcrossEffectiveTimeAndSubmission() throws Exception {
+        var account=emailAccount("gateboundary@example.com","gateboundary");
+        var effective=clock.instant().plusSeconds(1);
+        UUID required=reconsentRevision("SERVICE","2",effective,true,null,"PUBLISHED");
+        reconsentRevision("OPTIONAL","2",effective,true,null,"PUBLISHED");
+        updateNickname(bearer(account)).andExpect(status().isOk());
+        clock.advance(1);
+        updateNickname(bearer(account)).andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("TERMS_RECONSENT_REQUIRED"))
+                .andExpect(jsonPath("$.meta.requestId").exists());
+        clock.advance(1);
+        updateNickname(bearer(account)).andExpect(status().isForbidden());
+        mvc.perform(get("/api/v1/me").header("Authorization",bearer(account))).andExpect(status().isOk());
+        mvc.perform(get("/api/v1/me/login-methods").header("Authorization",bearer(account))).andExpect(status().isOk());
+        mvc.perform(get("/api/v1/terms")).andExpect(status().isOk());
+        mvc.perform(get("/api/v1/terms/"+required)).andExpect(status().isOk());
+        mvc.perform(get("/api/v1/me/consents").header("Authorization",bearer(account))).andExpect(status().isOk());
+        mvc.perform(get("/api/v1/me/consents/pending").header("Authorization",bearer(account)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.requiredAction").value(true));
+        reconsentPost(account,List.of(new kr.nospo.terms.contract.Terms.Consent(required,true)))
+                .andExpect(status().isCreated());
+        updateNickname(bearer(account)).andExpect(status().isOk());
+        assertThat(reconsentPending(account).items()).hasSize(1);
+    }
+
+    @Test void accessGateAllowsEmailLoginRefreshAndLogoutWhileBlockingNewTokens() throws Exception {
+        var account=emailAccount("gatelogin@example.com","gatelogin");
+        reconsentRevision("SERVICE","2",true);
+        var login=mvc.perform(post("/api/v1/auth/login").contentType("application/json")
+                .content("{\"email\":\"gatelogin@example.com\",\"password\":\" valid password \"}"))
+                .andExpect(status().isOk()).andReturn().getResponse();
+        String issued=mapper.readTree(login.getContentAsString()).at("/data/accessToken").asString();
+        updateNickname("Bearer "+issued).andExpect(status().isForbidden());
+        var refreshed=mvc.perform(post("/api/v1/auth/token/refresh").header("Origin","http://localhost:3000")
+                .header("Cookie","refreshToken="+login.getCookie("refreshToken").getValue())
+                .cookie(login.getCookie("refreshToken"))).andExpect(status().isOk()).andReturn().getResponse();
+        String rotated=mapper.readTree(refreshed.getContentAsString()).at("/data/accessToken").asString();
+        updateNickname("Bearer "+rotated).andExpect(status().isForbidden());
+        mvc.perform(post("/api/v1/auth/logout").header("Authorization","Bearer "+rotated))
+                .andExpect(status().isNoContent());
+        updateNickname("Bearer "+rotated).andExpect(status().isUnauthorized());
+        updateNickname(bearer(account)).andExpect(status().isForbidden());
+    }
+
+    @Test void accessGatePreservesOriginAuthenticationAndWithdrawal() throws Exception {
+        var account=emailAccount("gatewithdraw@example.com","gatewithdraw");
+        reconsentRevision("SERVICE","2",true);
+        mvc.perform(patch("/api/v1/me/nickname")).andExpect(status().isUnauthorized());
+        mvc.perform(patch("/api/v1/me/nickname").header("Authorization",bearer(account))
+                .header("Cookie","refreshToken=fixture")).andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("ORIGIN_NOT_ALLOWED"));
+        mvc.perform(post("/api/v1/unmapped"))
+                .andExpect(status().isForbidden())
+                .andExpect(content().string(org.hamcrest.Matchers.not(
+                        org.hamcrest.Matchers.containsString("TERMS_RECONSENT_REQUIRED"))));
+        var now=java.time.Instant.now();
+        var claims=org.springframework.security.oauth2.jwt.JwtClaimsSet.builder().issuer("nospo")
+                .subject(account.member().toString()).claim("sid",account.session().toString())
+                .issuedAt(now.minusSeconds(3600)).expiresAt(now.minusSeconds(300)).build();
+        var header=org.springframework.security.oauth2.jwt.JwsHeader.with(
+                org.springframework.security.oauth2.jose.jws.MacAlgorithm.HS256).build();
+        String expired=encoder.encode(org.springframework.security.oauth2.jwt.JwtEncoderParameters.from(header,claims)).getTokenValue();
+        updateNickname("Bearer "+expired).andExpect(status().isUnauthorized());
+        var reauth=mvc.perform(post("/api/v1/me/reauth/password").header("Authorization",bearer(account))
+                .contentType("application/json").content("{\"password\":\" valid password \",\"purpose\":\"WITHDRAWAL\"}"))
+                .andExpect(status().isOk()).andReturn().getResponse();
+        String proof=mapper.readTree(reauth.getContentAsString()).at("/data/reauthProof").asString();
+        mvc.perform(post("/api/v1/me/withdrawal").header("Authorization",bearer(account))
+                .header("Idempotency-Key",UUID.randomUUID()).contentType("application/json")
+                .content(mapper.writeValueAsString(Map.of("reauthProof",proof,"confirmed",true))))
+                .andExpect(status().isNoContent());
+        updateNickname(bearer(account)).andExpect(status().isUnauthorized());
+    }
+
+    @Test void accessGateSelectsKakaoExchangeByStoredFlowType() throws Exception {
+        var account=emailAccount("gatekakao@example.com","gatekakao");
+        user("12345","external@example.com",true);
+        var other=emailAccount("gateother@example.com","gateother");
+        var link=actions.authorizeLink(account.member(),account.session(),passwordProof(account,"LINK_KAKAO"));
+        String linkCode=exchangeFor(link);
+        UUID required=reconsentRevision("SERVICE","2",true);
+        mvc.perform(post("/api/v1/me/login-methods/kakao/authorization").header("Authorization",bearer(account)))
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.error.code").value("TERMS_RECONSENT_REQUIRED"));
+        mvc.perform(post("/api/v1/auth/kakao/exchange").header("Authorization",bearer(other))
+                .contentType("application/json").content(mapper.writeValueAsString(Map.of("exchangeCode",linkCode))))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.error.code").value("INVALID_PROOF"));
+        mvc.perform(post("/api/v1/auth/kakao/exchange").header("Authorization",bearer(account))
+                .contentType("application/json").content(mapper.writeValueAsString(Map.of("exchangeCode",linkCode))))
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.error.code").value("TERMS_RECONSENT_REQUIRED"));
+        reconsentPost(account,List.of(new kr.nospo.terms.contract.Terms.Consent(required,true))).andExpect(status().isCreated());
+        var ready=oauth.exchange(linkCode,account.member(),account.session(),"gate-link");
+        actions.link(account.member(),account.session(),(String)ready.data().get("linkProof"),UUID.randomUUID());
+        reconsentRevision("SERVICE","3",true);
+        var reauth=mvc.perform(post("/api/v1/me/reauth/kakao").header("Authorization",bearer(account))
+                .contentType("application/json").content("{\"purpose\":\"WITHDRAWAL\"}"))
+                .andExpect(status().isOk()).andReturn().getResponse();
+        String url=mapper.readTree(reauth.getContentAsString()).at("/data/authorizationUrl").asString();
+        var started=new kr.nospo.identity.application.KakaoOAuthService.Started(url,reauth.getCookie("nospoKakaoFlow").getValue());
+        assertThat(finish(started,account).data()).containsEntry("result","REAUTH_SUCCESS");
+        var login=mvc.perform(post("/api/v1/auth/kakao/exchange").contentType("application/json")
+                .content(mapper.writeValueAsString(Map.of("exchangeCode",callback(begin())))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.result").value("LOGIN_SUCCESS"))
+                .andReturn().getResponse();
+        String token=mapper.readTree(login.getContentAsString()).at("/data/auth/accessToken").asString();
+        updateNickname("Bearer "+token)
+                .andExpect(status().isForbidden());
+    }
+
+    @Test void accessGateFailsClosedOnInvalidCatalogAndQueryFailure() throws Exception {
+        var account=emailAccount("gatefail@example.com","gatefail");
+        org.mockito.Mockito.doThrow(new org.springframework.dao.DataAccessResourceFailureException("fixture"))
+                .when(reconsentStoreSpy).latestEffectiveChoices(account.member(),clock.instant());
+        updateNickname(bearer(account)).andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.error.code").value("INTERNAL_ERROR"));
+        clock.advance(1);
+        jdbc.update("UPDATE term_version SET publication_status='DRAFT' WHERE required=true");
+        updateNickname(bearer(account)).andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.error.code").value("TERMS_NOT_CONFIGURED"));
+        assertThat(jdbc.queryForObject("SELECT nickname FROM member WHERE member_id=?",String.class,id(account.member())))
+                .isEqualTo("gatefail");
+    }
+
     @Test void reconsentBaselineIsEmptyEvenForExplicitOptionalFalse() throws Exception {
         var a=emailAccount("rbase@example.com","rbase");
         jdbc.update("UPDATE term_version SET requires_reconsent=true");

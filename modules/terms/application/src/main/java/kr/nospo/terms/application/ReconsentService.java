@@ -29,6 +29,26 @@ public class ReconsentService implements MemberConsents {
             throw new ApiException(401,"INVALID_CREDENTIALS");
     }
 
+    @Override
+    @Transactional(readOnly=true, isolation=Isolation.REPEATABLE_READ)
+    public boolean requiresReconsent(UUID member, UUID session) {
+        Instant now=clock.instant();
+        authenticated(member,session,now);
+        var effective=terms.effective(now);
+        var types=new HashSet<String>();
+        for(var version:effective) {
+            if(!Set.of("SERVICE","PRIVACY","OPTIONAL").contains(version.type())
+                    || version.required()=="OPTIONAL".equals(version.type()))
+                throw new ApiException(409,"TERMS_VERSION_CHANGED");
+            types.add(version.type());
+        }
+        if(!types.containsAll(Set.of("SERVICE","PRIVACY")))
+            throw new ApiException(503,"TERMS_NOT_CONFIGURED");
+
+        var required=effective.stream().filter(Terms.Version::required).toList();
+        return !ReconsentPolicy.evaluate(required,store.latestEffectiveChoices(member,now)).pending().isEmpty();
+    }
+
     @Transactional(isolation=Isolation.READ_COMMITTED)
     public Pending pending(UUID member,UUID session) {
         members.lockActive(member);

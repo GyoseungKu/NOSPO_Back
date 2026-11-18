@@ -3,14 +3,23 @@ package kr.nospo.nospo_backend.config;
 import jakarta.servlet.*;
 import jakarta.servlet.http.*;
 
+import kr.nospo.identity.application.KakaoLinkAccess;
 import kr.nospo.support.ApiErrors;
+import kr.nospo.support.ApiException;
+import kr.nospo.terms.contract.MemberConsents;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.*;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.intercept.AuthorizationFilter;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
+import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.*;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -22,10 +31,61 @@ import java.util.*;
 
 @Configuration(proxyBeanMethods = false)
 public class SecurityConfig {
+    private static final PathPatternRequestMatcher.Builder PATHS =
+            PathPatternRequestMatcher.withDefaults();
+    private static final RequestMatcher API = PATHS.matcher("/api/**");
+    private static final RequestMatcher[] PUBLIC_REQUESTS = {
+            PATHS.matcher(HttpMethod.GET, "/api/v1/terms"),
+            PATHS.matcher(HttpMethod.GET, "/api/v1/auth/kakao/authorize"),
+            PATHS.matcher(HttpMethod.GET, "/api/v1/auth/kakao/callback"),
+            PATHS.matcher(HttpMethod.GET, "/api/v1/terms/*"),
+            PATHS.matcher(HttpMethod.GET, "/api/v1/auth/availability/*"),
+            PATHS.matcher(HttpMethod.POST, "/api/v1/auth/recovery/complete"),
+            PATHS.matcher(HttpMethod.POST, "/api/v1/auth/recovery/email-verifications"),
+            PATHS.matcher(HttpMethod.POST, "/api/v1/auth/recovery/email-verifications/confirm"),
+            PATHS.matcher(HttpMethod.POST, "/api/v1/auth/signup"),
+            PATHS.matcher(HttpMethod.POST, "/api/v1/auth/kakao/exchange"),
+            PATHS.matcher(HttpMethod.POST, "/api/v1/auth/signup/kakao"),
+            PATHS.matcher(HttpMethod.POST, "/api/v1/auth/signup/kakao/context"),
+            PATHS.matcher(HttpMethod.POST, "/api/v1/auth/signup/email-verifications"),
+            PATHS.matcher(HttpMethod.POST, "/api/v1/auth/signup/email-verifications/confirm"),
+            PATHS.matcher(HttpMethod.POST, "/api/v1/auth/login"),
+            PATHS.matcher(HttpMethod.POST, "/api/v1/auth/token/refresh"),
+            PATHS.matcher(HttpMethod.POST, "/api/v1/auth/logout"),
+            PATHS.matcher(HttpMethod.POST, "/api/v1/auth/password-resets"),
+            PATHS.matcher(HttpMethod.POST, "/api/v1/auth/password-resets/verify"),
+            PATHS.matcher(HttpMethod.POST, "/api/v1/auth/password-resets/complete")
+    };
+    private static final RequestMatcher[] RECONSENT_EXEMPT = {
+            PATHS.matcher(HttpMethod.GET, "/api/v1/me"),
+            PATHS.matcher(HttpMethod.HEAD, "/api/v1/me"),
+            PATHS.matcher(HttpMethod.GET, "/api/v1/me/login-methods"),
+            PATHS.matcher(HttpMethod.HEAD, "/api/v1/me/login-methods"),
+            PATHS.matcher(HttpMethod.GET, "/api/v1/me/profile-image"),
+            PATHS.matcher(HttpMethod.HEAD, "/api/v1/me/profile-image"),
+            PATHS.matcher(HttpMethod.GET, "/api/v1/me/consents"),
+            PATHS.matcher(HttpMethod.GET, "/api/v1/me/consents/pending"),
+            PATHS.matcher(HttpMethod.HEAD, "/api/v1/me/consents"),
+            PATHS.matcher(HttpMethod.HEAD, "/api/v1/me/consents/pending"),
+            PATHS.matcher(HttpMethod.POST, "/api/v1/me/consents"),
+            PATHS.matcher(HttpMethod.POST, "/api/v1/me/reauth/password"),
+            PATHS.matcher(HttpMethod.POST, "/api/v1/me/reauth/kakao"),
+            PATHS.matcher(HttpMethod.POST, "/api/v1/me/withdrawal")
+    };
+
+    @Bean
+    KakaoLinkAccess kakaoLinkAccess(MemberConsents consents) {
+        return (member, session) -> {
+            if (consents.requiresReconsent(member, session))
+                throw new ApiException(403, "TERMS_RECONSENT_REQUIRED");
+        };
+    }
+
     @Bean
     SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             ObjectMapper mapper,
+            KakaoLinkAccess consentAccess,
             @Value("${nospo.auth.allowed-origins}") List<String> allowedOrigins)
             throws Exception {
         if (allowedOrigins.isEmpty() || allowedOrigins.contains("*"))
@@ -67,32 +127,7 @@ public class SecurityConfig {
                                                 "/v3/api-docs/**",
                                                 "/v3/api-docs.yaml")
                                         .permitAll()
-                                        .requestMatchers(
-                                                org.springframework.http.HttpMethod.GET,
-                                                "/api/v1/terms",
-                                                "/api/v1/auth/kakao/authorize",
-                                                "/api/v1/auth/kakao/callback",
-                                                "/api/v1/terms/*",
-                                                "/api/v1/auth/availability/*")
-                                        .permitAll()
-                                        .requestMatchers(
-                                                org.springframework.http.HttpMethod.POST,
-                                                "/api/v1/auth/recovery/complete",
-                                                "/api/v1/auth/recovery/email-verifications",
-                                                "/api/v1/auth/recovery/email-verifications/confirm",
-                                                "/api/v1/auth/signup",
-                                                "/api/v1/auth/kakao/exchange",
-                                                "/api/v1/auth/signup/kakao",
-                                                "/api/v1/auth/signup/kakao/context",
-                                                "/api/v1/auth/signup/email-verifications",
-                                                "/api/v1/auth/signup/email-verifications/confirm",
-                                                "/api/v1/auth/login",
-                                                "/api/v1/auth/token/refresh",
-                                                "/api/v1/auth/logout",
-                                                "/api/v1/auth/password-resets",
-                                                "/api/v1/auth/password-resets/verify",
-                                                "/api/v1/auth/password-resets/complete")
-                                        .permitAll()
+                                        .requestMatchers(PUBLIC_REQUESTS).permitAll()
                                         .anyRequest()
                                         .authenticated())
                 .oauth2ResourceServer(
@@ -145,7 +180,42 @@ public class SecurityConfig {
                             }
                         },
                         UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(
+                        new OncePerRequestFilter() {
+                            @Override
+                            protected void doFilterInternal(
+                                    HttpServletRequest request,
+                                    HttpServletResponse response,
+                                    FilterChain chain)
+                                    throws ServletException, IOException {
+                                var authentication = SecurityContextHolder.getContext().getAuthentication();
+                                if (authentication instanceof JwtAuthenticationToken jwt
+                                        && API.matches(request)
+                                        && !matches(PUBLIC_REQUESTS, request)
+                                        && !matches(RECONSENT_EXEMPT, request)) {
+                                    try {
+                                        consentAccess.check(
+                                                UUID.fromString(jwt.getToken().getSubject()),
+                                                UUID.fromString(jwt.getToken().getClaimAsString("sid")));
+                                    } catch (ApiException failure) {
+                                        error(response, mapper, failure.status(), failure.code());
+                                        return;
+                                    } catch (RuntimeException failure) {
+                                        org.slf4j.LoggerFactory.getLogger(SecurityConfig.class)
+                                                .error("Reconsent check failed type={}", failure.getClass().getSimpleName());
+                                        error(response, mapper, 500, "INTERNAL_ERROR");
+                                        return;
+                                    }
+                                }
+                                chain.doFilter(request, response);
+                            }
+                        },
+                        AuthorizationFilter.class)
                 .build();
+    }
+
+    private static boolean matches(RequestMatcher[] matchers, HttpServletRequest request) {
+        return Arrays.stream(matchers).anyMatch(matcher -> matcher.matches(request));
     }
 
     private static void error(

@@ -2,6 +2,7 @@ package kr.nospo.nospo_backend;
 
 import static kr.nospo.support.SqlIds.*;
 import static org.assertj.core.api.Assertions.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 import kr.nospo.lifecycle.application.PurgeService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,6 +21,40 @@ class MySqlConsentHistoryTests extends ConsentHistoryTests {
         p.add("spring.datasource.password",MYSQL::getPassword);p.add("spring.datasource.driver-class-name",()->"com.mysql.cj.jdbc.Driver");
     }
     @Autowired PurgeService purger;
+
+    @Test void accessGateSeesConsentOnlyAfterTheWritingTransactionCommits() throws Exception {
+        var account=emailAccount("gatecommit@example.com","gatecommit");
+        UUID required=reconsentRevision("SERVICE","2",true);
+        var inserted=new java.util.concurrent.CountDownLatch(1);
+        var release=new java.util.concurrent.CountDownLatch(1);
+        var pool=java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            var submission=pool.submit(()->transaction().executeWithoutResult(s->{
+                reconsentSubmit(account,new kr.nospo.terms.contract.Terms.Consent(required,true));
+                inserted.countDown();
+                try {
+                    if(!release.await(15,java.util.concurrent.TimeUnit.SECONDS))
+                        throw new IllegalStateException("test barrier");
+                } catch(InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException(e);
+                }
+            }));
+            assertThat(inserted.await(10,java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            var beforeCommit=pool.submit(()->updateNickname(bearer(account))
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.error.code")
+                            .value("TERMS_RECONSENT_REQUIRED")));
+            beforeCommit.get(10,java.util.concurrent.TimeUnit.SECONDS);
+            release.countDown();
+            submission.get(10,java.util.concurrent.TimeUnit.SECONDS);
+            updateNickname(bearer(account))
+                    .andExpect(status().isOk());
+        } finally {
+            release.countDown();
+            pool.shutdownNow();
+        }
+    }
 
     @Test void reconsentConcurrentIdenticalSubmissionsReturnOneStoredEvent() throws Exception {
         var a=emailAccount("rconcurrent@example.com","rconcurrent");
@@ -161,6 +196,8 @@ class MySqlConsentHistoryTests extends ConsentHistoryTests {
             assertThat(write.get(30,java.util.concurrent.TimeUnit.SECONDS)).isEqualTo("INVALID_CREDENTIALS");
             UUID session=UUID.fromString(decoder.decode(restored.data().accessToken()).getClaimAsString("sid"));
             assertThat(history.pending(a.member(),session).items()).isEmpty();
+            updateNickname(bearer(a)).andExpect(status().isUnauthorized());
+            updateNickname("Bearer "+restored.data().accessToken()).andExpect(status().isOk());
             assertThat(consentStore.events(a.member())).hasSize(6);
             assertThat(count("credit_transaction")).isEqualTo(1);
         } finally { start.countDown();pool.shutdownNow(); }

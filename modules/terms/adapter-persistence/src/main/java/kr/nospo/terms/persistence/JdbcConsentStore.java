@@ -25,6 +25,18 @@ public class JdbcConsentStore implements ConsentStore {
                 (rs,n)->new Ordered(event(rs),rs.getLong("event_order")),id(member));
     }
 
+    public List<Ordered> latestEffectiveChoices(UUID member, Instant now) {
+        return db.query("""
+                SELECT c.* FROM term_version v
+                JOIN member_consent c ON c.term_version_id=v.term_version_id AND c.member_id=?
+                WHERE v.publication_status='PUBLISHED' AND v.effective_at<=? AND v.required=true
+                  AND c.event_order=(
+                      SELECT MAX(newer.event_order) FROM member_consent newer
+                      WHERE newer.member_id=? AND newer.term_version_id=v.term_version_id
+                  )
+                """, (rs,n)->new Ordered(event(rs),rs.getLong("event_order")),id(member),at(now),id(member));
+    }
+
     public long ceiling(UUID member) {
         return db.queryForObject("SELECT COALESCE(MAX(event_order),0) FROM member_consent WHERE member_id=?",Long.class,id(member));
     }

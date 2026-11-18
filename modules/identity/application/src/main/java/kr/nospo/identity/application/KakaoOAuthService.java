@@ -41,18 +41,21 @@ public class KakaoOAuthService {
     private final DatabaseGuard guard;
     private final KakaoAccountService accountActions;
     private final RecoveryIdentity recovery;
+    private final KakaoLinkAccess linkAccess;
     private final TransactionTemplate tx;
 
     public KakaoOAuthService(KakaoOAuthStore store, KakaoClient client, KakaoOAuthSettings settings,
             Secrets secrets, Clock clock, ObjectMapper mapper, SignupIdentity identity,
             LoginMethodStore loginStore, LoginMethods methods, IdentityStore accounts,
-            Members members, DatabaseGuard guard, KakaoAccountService accountActions, RecoveryIdentity recovery, PlatformTransactionManager manager) {
+            Members members, DatabaseGuard guard, KakaoAccountService accountActions, RecoveryIdentity recovery, KakaoLinkAccess linkAccess,
+            PlatformTransactionManager manager) {
         this.store = store; this.client = client; this.settings = settings; this.secrets = secrets;
         this.clock = clock; this.mapper = mapper; this.identity = identity;
         this.loginStore = loginStore; this.methods = methods; this.accounts = accounts;
         this.members = members; this.guard = guard;
         this.accountActions = accountActions;
         this.recovery = recovery;
+        this.linkAccess = linkAccess;
         tx = new TransactionTemplate(manager);
         tx.setIsolationLevel(org.springframework.transaction.TransactionDefinition.ISOLATION_READ_COMMITTED);
     }
@@ -139,6 +142,7 @@ public class KakaoOAuthService {
                     && (!e.flow().member().equals(member) || !e.flow().session().equals(session)))
                 throw new ApiException(400, "INVALID_PROOF");
             checkSession(e.flow().member(), e.flow().session());
+            if ("LINK".equals(e.flow().type())) linkAccess.check(member, session);
             var user = mapper.readValue(secrets.decrypt(e.payload(), "oauth-exchange:" + e.id()), KakaoClient.User.class);
             store.consumeExchange(e.id(), now);
             if (!"LOGIN".equals(e.flow().type()))
