@@ -4,6 +4,7 @@ import jakarta.servlet.*;
 import jakarta.servlet.http.*;
 
 import kr.nospo.identity.application.KakaoLinkAccess;
+import kr.nospo.notice.web.AdminNoticeImageController;
 import kr.nospo.support.ApiErrors;
 import kr.nospo.support.ApiException;
 import kr.nospo.support.SqlIds;
@@ -22,11 +23,15 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.intercept.AuthorizationFilter;
 import org.springframework.security.web.csrf.CsrfFilter;
+import org.springframework.security.web.csrf.CsrfToken;
+import org.springframework.security.web.csrf.CsrfTokenRequestHandler;
 import org.springframework.security.web.csrf.HttpSessionCsrfTokenRepository;
+import org.springframework.security.web.csrf.XorCsrfTokenRequestAttributeHandler;
 import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.*;
+import org.springframework.web.filter.CorsFilter;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import tools.jackson.databind.ObjectMapper;
@@ -39,7 +44,10 @@ public class SecurityConfig {
     private static final PathPatternRequestMatcher.Builder PATHS =
             PathPatternRequestMatcher.withDefaults();
     private static final RequestMatcher API = PATHS.matcher("/api/**");
+    private static final RequestMatcher NOTICE_IMAGE_UPLOAD =
+            PATHS.matcher(HttpMethod.POST, AdminNoticeImageController.PATH);
     private static final RequestMatcher[] ADMIN_NOTICES = {
+            NOTICE_IMAGE_UPLOAD,
             PATHS.matcher("/api/v1/admin/notices"),
             PATHS.matcher("/api/v1/admin/notices/{noticeId}")
     };
@@ -112,12 +120,27 @@ public class SecurityConfig {
         noticeCors.addAllowedHeader("X-CSRF-TOKEN");
         noticeCors.addExposedHeader("X-CSRF-TOKEN");
         source.registerCorsConfiguration("/api/v1/admin/notices", noticeCors);
+        source.registerCorsConfiguration(AdminNoticeImageController.PATH, noticeCors);
         source.registerCorsConfiguration("/api/v1/admin/notices/{noticeId}", noticeCors);
         source.registerCorsConfiguration("/api/**", cors);
         return http.cors(c -> c.configurationSource(source))
+                .addFilterBefore(new OncePerRequestFilter() {
+                    @Override
+                    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
+                            FilterChain chain) throws ServletException, IOException {
+                        String origin = request.getHeader("Origin");
+                        if (NOTICE_IMAGE_UPLOAD.matches(request) && origin != null
+                                && !allowedOrigins.contains(origin)) {
+                            error(response, mapper, 403, "ORIGIN_NOT_ALLOWED");
+                            return;
+                        }
+                        chain.doFilter(request, response);
+                    }
+                }, CorsFilter.class)
                 .csrf(
                         c ->
-                                c.ignoringRequestMatchers(
+                                c.ignoringRequestMatchers(NOTICE_IMAGE_UPLOAD)
+                                        .ignoringRequestMatchers(
                                         "/api/v1/auth/recovery/complete",
                                         "/api/v1/auth/recovery/email-verifications",
                                         "/api/v1/auth/recovery/email-verifications/confirm",
@@ -243,6 +266,23 @@ public class SecurityConfig {
         var repository = new HttpSessionCsrfTokenRepository();
         repository.setSessionAttributeName("NOSPO_NOTICE_ADMIN_CSRF");
         var csrf = new CsrfFilter(repository);
+        csrf.setRequestHandler(new CsrfTokenRequestHandler() {
+            private final XorCsrfTokenRequestAttributeHandler delegate = new XorCsrfTokenRequestAttributeHandler();
+
+            @Override
+            public void handle(HttpServletRequest request, HttpServletResponse response,
+                    java.util.function.Supplier<CsrfToken> token) {
+                delegate.handle(request, response, token);
+            }
+
+            @Override
+            public String resolveCsrfTokenValue(HttpServletRequest request, CsrfToken token) {
+                // Reading a multipart form parameter can parse the upload before CSRF validation.
+                if (NOTICE_IMAGE_UPLOAD.matches(request) && request.getHeader(token.getHeaderName()) == null)
+                    return null;
+                return delegate.resolveCsrfTokenValue(request, token);
+            }
+        });
         csrf.setBeanName("noticeAdminCsrf");
         csrf.setAccessDeniedHandler((request, response, failure) -> error(response, mapper, 403, "FORBIDDEN"));
         return new OncePerRequestFilter() {

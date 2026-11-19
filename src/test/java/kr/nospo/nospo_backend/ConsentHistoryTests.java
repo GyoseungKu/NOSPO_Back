@@ -16,6 +16,10 @@ import java.util.*;
 import java.util.concurrent.*;
 
 class ConsentHistoryTests extends RecoveryTests {
+    private static final String NOTICE_IMAGES = "/api/v1/admin/notices/images";
+    private static final String NOTICE_ORIGIN = "http://localhost:3000";
+    @org.springframework.test.context.bean.override.mockito.MockitoSpyBean
+    kr.nospo.notice.application.NoticeImageStore noticeImages;
     @Autowired MemberConsents history;
     @Autowired ConsentStore consentStore;
     @Autowired Members members;
@@ -31,6 +35,188 @@ class ConsentHistoryTests extends RecoveryTests {
     }
     UUID optional() { return consents.stream().filter(c->!c.agreed()).findFirst().orElseThrow().termVersionId(); }
     String bearer(Account a) { return "Bearer "+a.signup().data().accessToken(); }
+
+    @Test void noticeImageUploadStoresIndependentSanitizedImages() throws Exception {
+        var admin = noticeImageAdmin();
+        var csrf = noticeImageCsrf(admin);
+        long notices = rows("notice");
+        long profiles = rows("member_profile_image");
+        long images = rows("notice_image");
+        var saved = new HashSet<UUID>();
+        for (String format : List.of("png", "jpeg")) {
+            byte[] input = imageBytes(format, 3, 2);
+            var part = imagePart("../../image." + format, "image/" + format, input);
+            var response = mvc.perform(multipart(NOTICE_IMAGES).file(part).with(csrf)
+                            .header("Authorization", bearer(admin)))
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.meta.requestId").isString()).andReturn();
+            var data = mapper.readTree(response.getResponse().getContentAsString()).path("data");
+            assertThat(data.size()).isEqualTo(1);
+            UUID imageId = UUID.fromString(data.path("imageId").asString());
+            assertThat(saved.add(imageId)).isTrue();
+            byte[] png = jdbc.queryForObject("SELECT png_data FROM notice_image WHERE image_id=?",
+                    byte[].class, id(imageId));
+            assertThat(png).startsWith((byte) 0x89, (byte) 'P', (byte) 'N', (byte) 'G');
+            var clean = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(png));
+            var original = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(input));
+            assertThat(clean.getWidth()).isEqualTo(original.getWidth());
+            assertThat(clean.getHeight()).isEqualTo(original.getHeight());
+            assertThat(clean.getRGB(1, 1)).isEqualTo(original.getRGB(1, 1));
+            var created = jdbc.queryForObject("SELECT created_at FROM notice_image WHERE image_id=?",
+                    (row, index) -> row.getTimestamp(1).toInstant(), id(imageId));
+            assertThat(created).isEqualTo(clock.instant());
+        }
+        assertThat(rows("notice_image")).isEqualTo(images + 2);
+        assertThat(rows("notice")).isEqualTo(notices);
+        assertThat(rows("member_profile_image")).isEqualTo(profiles);
+    }
+
+    @Test void noticeImageUploadRejectsBadPartsAndEnforcesSizeBoundary() throws Exception {
+        var admin = noticeImageAdmin();
+        var csrf = noticeImageCsrf(admin);
+        long before = rows("notice_image");
+        mvc.perform(multipart(NOTICE_IMAGES).with(csrf).header("Authorization", bearer(admin)))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
+        mvc.perform(post(NOTICE_IMAGES).contentType("application/json").content("{}")
+                        .with(csrf).header("Authorization", bearer(admin)))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
+        byte[] png = imageBytes("png", 1, 1);
+        checkImage(admin, csrf, imagePart("image.png", "image/png", new byte[0]), 400, "INVALID_REQUEST");
+        checkImage(admin, csrf, imagePart("image.png", "image/png", new byte[] {'M', 'Z'}), 422, "INVALID_IMAGE");
+        checkImage(admin, csrf, imagePart("image.svg", "image/svg+xml", "<svg/>".getBytes(java.nio.charset.StandardCharsets.UTF_8)),
+                422, "INVALID_IMAGE");
+        checkImage(admin, csrf, imagePart("image.jpg", "image/png", png), 422, "INVALID_IMAGE");
+        checkImage(admin, csrf, imagePart("image.png", "image/jpeg", png), 422, "INVALID_IMAGE");
+        checkImage(admin, csrf, imagePart("image.png", "image/png", Arrays.copyOf(png, png.length - 5)),
+                422, "INVALID_IMAGE");
+        var broken = Arrays.copyOf(png, png.length);
+        broken[20] ^= 1;
+        checkImage(admin, csrf, imagePart("image.png", "image/png", broken), 422, "INVALID_IMAGE");
+        checkImage(admin, csrf, imagePart("image.png", "image/png", pngChunk(png, "acTL", 8)),
+                422, "ANIMATED_IMAGE_NOT_ALLOWED");
+        checkImage(admin, csrf, imagePart("image.png", "image/png", imageBytes("png", 4097, 1)),
+                422, "INVALID_IMAGE_DIMENSIONS");
+        int limit = 5 * 1024 * 1024;
+        var boundary = pngChunk(png, "noSp", limit - png.length - 12);
+        checkImage(admin, csrf, imagePart("image.png", "image/png", Arrays.copyOf(boundary, limit + 1)),
+                413, "IMAGE_TOO_LARGE");
+        assertThat(rows("notice_image")).isEqualTo(before);
+        mvc.perform(multipart(NOTICE_IMAGES).file(imagePart("image.png", "image/png", boundary))
+                        .with(csrf).header("Authorization", bearer(admin)))
+                .andExpect(status().isCreated());
+        assertThat(rows("notice_image")).isEqualTo(before + 1);
+    }
+
+    @Test void noticeImageUploadUsesCurrentAuthorityAndCsrfBeforeValidation() throws Exception {
+        var account = emailAccount("notice-image-access@example.com", "notice_image_access");
+        var badImage = imagePart("image.png", "image/png", new byte[] {1});
+        mvc.perform(multipart(NOTICE_IMAGES).file(badImage)).andExpect(status().isUnauthorized());
+        mvc.perform(multipart(NOTICE_IMAGES).file(badImage).header("Authorization", bearer(account)))
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.error.code").value("FORBIDDEN"));
+        jdbc.update("UPDATE member SET role='ADMIN' WHERE member_id=?", id(account.member()));
+        var csrf = noticeImageCsrf(account);
+        mvc.perform(multipart(NOTICE_IMAGES).file(badImage).header("Authorization", bearer(account)))
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.error.code").value("FORBIDDEN"));
+        mvc.perform(multipart(NOTICE_IMAGES).file(badImage).with(csrf).with(request -> {
+                    request.removeHeader("X-CSRF-TOKEN");
+                    request.addHeader("X-CSRF-TOKEN", "tampered");
+                    return request;
+                }).header("Authorization", bearer(account)))
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.error.code").value("FORBIDDEN"));
+        mvc.perform(multipart(NOTICE_IMAGES).file(badImage).header("Origin", "https://evil.example")
+                        .header("Authorization", bearer(account)))
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.error.code").value("ORIGIN_NOT_ALLOWED"));
+        mvc.perform(options(NOTICE_IMAGES).header("Origin", NOTICE_ORIGIN)
+                        .header("Access-Control-Request-Method", "POST")
+                        .header("Access-Control-Request-Headers", "authorization,content-type,x-csrf-token"))
+                .andExpect(status().isOk()).andExpect(header().string("Access-Control-Allow-Origin", NOTICE_ORIGIN));
+        checkImage(account, csrf, badImage, 422, "INVALID_IMAGE");
+        jdbc.update("UPDATE member SET role='USER' WHERE member_id=?", id(account.member()));
+        checkImage(account, csrf, badImage, 403, "FORBIDDEN");
+        jdbc.update("UPDATE member SET role='ADMIN' WHERE member_id=?", id(account.member()));
+        var claims = org.springframework.security.oauth2.jwt.JwtClaimsSet.builder().issuer("nospo")
+                .subject(account.member().toString()).claim("sid", account.session().toString())
+                .issuedAt(clock.instant().minusSeconds(300)).expiresAt(clock.instant().minusSeconds(120)).build();
+        var header = org.springframework.security.oauth2.jwt.JwsHeader
+                .with(org.springframework.security.oauth2.jose.jws.MacAlgorithm.HS256).build();
+        var expired = encoder.encode(org.springframework.security.oauth2.jwt.JwtEncoderParameters
+                .from(header, claims)).getTokenValue();
+        mvc.perform(multipart(NOTICE_IMAGES).file(badImage).with(csrf)
+                        .header("Authorization", "Bearer " + expired)).andExpect(status().isUnauthorized());
+        reconsentRevision("SERVICE", "2", true);
+        checkImage(account, csrf, badImage, 403, "TERMS_RECONSENT_REQUIRED");
+        jdbc.update("UPDATE auth_session SET revoked_at=? WHERE session_id=?", at(clock.instant()), id(account.session()));
+        checkImage(account, csrf, badImage, 401, "INVALID_CREDENTIALS");
+    }
+
+    @Test void noticeImageUploadRollsBackAfterInsertFailure() throws Exception {
+        var admin = noticeImageAdmin();
+        var csrf = noticeImageCsrf(admin);
+        long before = rows("notice_image");
+        org.mockito.Mockito.doAnswer(call -> {
+            call.callRealMethod();
+            throw new IllegalStateException("fixture failure after insert");
+        }).when(noticeImages).insert(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any());
+        checkImage(admin, csrf, imagePart("image.png", "image/png", imageBytes("png", 1, 1)),
+                500, "INTERNAL_ERROR");
+        assertThat(rows("notice_image")).isEqualTo(before);
+    }
+
+    private Account noticeImageAdmin() {
+        var account = emailAccount("notice-image@example.com", "notice_image_admin");
+        jdbc.update("UPDATE member SET role='ADMIN' WHERE member_id=?", id(account.member()));
+        return account;
+    }
+
+    private org.springframework.test.web.servlet.request.RequestPostProcessor noticeImageCsrf(Account account)
+            throws Exception {
+        var bootstrap = mvc.perform(get("/api/v1/admin/notices").header("Authorization", bearer(account))
+                        .header("Origin", NOTICE_ORIGIN))
+                .andExpect(status().isOk()).andReturn();
+        var session = (org.springframework.mock.web.MockHttpSession) bootstrap.getRequest().getSession(false);
+        var token = bootstrap.getResponse().getHeader("X-CSRF-TOKEN");
+        return request -> {
+            request.setSession(session);
+            request.addHeader("Origin", NOTICE_ORIGIN);
+            request.addHeader("X-CSRF-TOKEN", token);
+            return request;
+        };
+    }
+
+    private long rows(String table) {
+        return jdbc.queryForObject("SELECT COUNT(*) FROM " + table, Long.class);
+    }
+
+    private void checkImage(Account account, org.springframework.test.web.servlet.request.RequestPostProcessor csrf,
+            org.springframework.mock.web.MockMultipartFile part, int statusCode, String errorCode) throws Exception {
+        mvc.perform(multipart(NOTICE_IMAGES).file(part).with(csrf).header("Authorization", bearer(account)))
+                .andExpect(status().is(statusCode)).andExpect(jsonPath("$.error.code").value(errorCode))
+                .andExpect(jsonPath("$.meta.requestId").isString());
+    }
+
+    private static org.springframework.mock.web.MockMultipartFile imagePart(String name, String type, byte[] bytes) {
+        return new org.springframework.mock.web.MockMultipartFile("file", name, type, bytes);
+    }
+
+    private static byte[] imageBytes(String format, int width, int height) throws java.io.IOException {
+        var image = new java.awt.image.BufferedImage(width, height, java.awt.image.BufferedImage.TYPE_INT_RGB);
+        image.setRGB(0, 0, 0xff2468ac);
+        var output = new java.io.ByteArrayOutputStream();
+        assertThat(javax.imageio.ImageIO.write(image, format, output)).isTrue();
+        return output.toByteArray();
+    }
+
+    private static byte[] pngChunk(byte[] png, String type, int length) {
+        var data = java.nio.ByteBuffer.allocate(png.length + length + 12);
+        int end = png.length - 12;
+        data.put(png, 0, end).putInt(length).put(type.getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+        data.position(data.position() + length);
+        var crc = new java.util.zip.CRC32();
+        crc.update(data.array(), end + 4, length + 4);
+        data.putInt((int) crc.getValue()).put(png, end, 12);
+        return data.array();
+    }
 
     @org.springframework.test.context.bean.override.mockito.MockitoSpyBean ConsentStore reconsentStoreSpy;
 

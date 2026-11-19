@@ -41,19 +41,55 @@ class MySqlNoticeMigrationTests {
                 INSERT INTO notice(notice_id,title,summary,content,created_at,updated_at)
                 VALUES (?, 'existing', '', 'body', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 """, id(existing));
+        var versionTen = Flyway.configure().dataSource(source).target("10").load();
+        assertThat(versionTen.migrate().migrationsExecuted).isEqualTo(1);
+        assertThat(versionTen.info().current().getVersion().getVersion()).isEqualTo("10");
         var flyway = Flyway.configure().dataSource(source).load();
         assertThat(flyway.migrate().migrationsExecuted).isEqualTo(1);
         flyway.validate();
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("10");
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("11");
         assertThat(db.queryForMap("SELECT deleted_at FROM notice WHERE notice_id=?", id(existing)).get("deleted_at")).isNull();
         assertThat(db.queryForObject("""
                 SELECT COUNT(*) FROM information_schema.tables
                 WHERE table_schema=DATABASE() AND table_name IN ('member','account','member_consent')
                 """, Integer.class)).isEqualTo(3);
 
-        var erd = new ObjectMapper().readTree(Path.of("docs/NOSPO_Notice.erd.json").toFile());
+        var erd = new ObjectMapper().readTree(Path.of("erd/NOSPO_Notice.erd.json").toFile());
         var collections = erd.path("collections");
         var columns = collections.path("tableColumnEntities");
+        var imageTable = collections.path("tableEntities").path("t_notice_image");
+        assertThat(imageTable.path("name").asString()).isEqualTo("notice_image");
+        var imageColumns = db.queryForList("""
+                SELECT column_name, column_type, is_nullable, column_default, column_key
+                FROM information_schema.columns
+                WHERE table_schema=DATABASE() AND table_name='notice_image' ORDER BY ordinal_position
+                """);
+        assertThat(imageColumns).hasSize(3);
+        assertThat(imageTable.path("columnIds").size()).isEqualTo(imageColumns.size());
+        for (int i = 0; i < imageColumns.size(); i++) {
+            var expected = columns.path(imageTable.path("columnIds").path(i).asString());
+            var actual = imageColumns.get(i);
+            assertThat(actual.get("column_name")).isEqualTo(expected.path("name").asString());
+            assertThat(actual.get("column_type")).isEqualTo(
+                    expected.path("dataType").asString().toLowerCase(java.util.Locale.ROOT));
+            assertThat(actual.get("is_nullable")).isEqualTo("NO");
+            assertThat(actual.get("column_default")).isNull();
+            assertThat(expected.path("options").asInt()).isEqualTo(i == 0 ? 10 : 8);
+            assertThat(actual.get("column_key")).isEqualTo(i == 0 ? "PRI" : "");
+        }
+        assertThat(db.queryForObject("""
+                SELECT COUNT(*) FROM information_schema.table_constraints
+                WHERE table_schema=DATABASE() AND table_name='notice_image' AND constraint_type='FOREIGN KEY'
+                """, Integer.class)).isZero();
+        String insertImage = "INSERT INTO notice_image(image_id,png_data,created_at) VALUES (?,?,CURRENT_TIMESTAMP(6))";
+        byte[] imageId = id(UUID.randomUUID());
+        db.update(insertImage, imageId, new byte[] {1});
+        assertThatThrownBy(() -> db.update(insertImage, imageId, new byte[] {2}))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertCheck("ck_notice_image_data", () -> db.update(insertImage, id(UUID.randomUUID()), new byte[0]));
+        assertThat(db.queryForObject("SELECT png_data FROM notice_image WHERE image_id=?", byte[].class, imageId))
+                .containsExactly((byte) 1);
+        assertThat(db.queryForObject("SELECT COUNT(*) FROM member_profile_image", Integer.class)).isZero();
         var table = collections.path("tableEntities").path("t_notice");
         assertThat(table.path("name").asString()).isEqualTo("notice");
         var names = db.queryForList("""

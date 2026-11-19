@@ -28,7 +28,8 @@
   },
   "doc": {
     "tableIds": [
-      "t_notice"
+      "t_notice",
+      "t_notice_image"
     ],
     "relationshipIds": [],
     "indexIds": [
@@ -62,9 +63,51 @@
           "y": 240,
           "color": "#2563eb"
         }
+      },
+      "t_notice_image": {
+        "id": "t_notice_image",
+        "name": "notice_image",
+        "comment": "공지 이미지 업로드 결과를 독립적으로 저장",
+        "columnIds": [
+          "t_notice_image__image_id",
+          "t_notice_image__png_data",
+          "t_notice_image__created_at"
+        ],
+        "ui": {
+          "x": 620,
+          "y": 240,
+          "color": "#2563eb"
+        }
       }
     },
     "tableColumnEntities": {
+      "t_notice_image__image_id": {
+        "id": "t_notice_image__image_id",
+        "tableId": "t_notice_image",
+        "name": "image_id",
+        "comment": "서버 생성 이미지 UUID",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 10
+      },
+      "t_notice_image__png_data": {
+        "id": "t_notice_image__png_data",
+        "tableId": "t_notice_image",
+        "name": "png_data",
+        "comment": "검증 및 재인코딩된 PNG",
+        "dataType": "MEDIUMBLOB",
+        "default": "",
+        "options": 8
+      },
+      "t_notice_image__created_at": {
+        "id": "t_notice_image__created_at",
+        "tableId": "t_notice_image",
+        "name": "created_at",
+        "comment": "서버 UTC 생성 시각",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 8
+      },
       "t_notice__notice_id": {
         "id": "t_notice__notice_id",
         "tableId": "t_notice",

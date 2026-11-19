@@ -1,8 +1,10 @@
 package kr.nospo.support;
 
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.*;
@@ -77,7 +79,13 @@ public class ApiErrors {
     }
 
     @ExceptionHandler(Exception.class)
-    ResponseEntity<?> unexpected(Exception ex) {
+    ResponseEntity<?> unexpected(Exception ex, HttpServletRequest request) {
+        if ((ex instanceof org.springframework.web.multipart.MultipartException
+                        || ex instanceof HttpMediaTypeNotSupportedException)
+                && "POST".equals(request.getMethod())
+                && (request.getContextPath() + "/api/v1/admin/notices/images").equals(request.getRequestURI())) {
+            return invalid(ex);
+        }
         org.slf4j.LoggerFactory.getLogger(ApiErrors.class)
                 .error("API failure type={}", ex.getClass().getSimpleName());
         return ResponseEntity.internalServerError()

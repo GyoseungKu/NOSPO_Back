@@ -78,7 +78,7 @@ MySQL Testcontainers에서 V8 기준의 증분 마이그레이션과 ERD·실제
 
 ## 5. 데이터베이스 설계
 
-[Notice 전용 ERD](NOSPO_Notice.erd.json) · [Flyway V9](../src/main/resources/db/migration/V9__notice.sql)
+[Notice 전용 ERD](../erd/NOSPO_Notice.erd.json) · [Flyway V9](../src/main/resources/db/migration/V9__notice.sql)
 
 | 컬럼 | 유형 | 제약 및 의미 |
 | --- | --- | --- |
@@ -290,3 +290,73 @@ H2와 MySQL에서 관리자 등록·수정·삭제, 길이·null 및 Markdown, �
 시작·종료 브랜치는 `feat/notice`, HEAD는 `b4d142f613f07f9c3b9fc7b065d40657a92f9d58`이다. 로컬 `origin/identity`와 앞섬·뒤처짐은 각각 0개다. 기존 `.gitignore`와 1~3단계 작업을 보존했고, 변경 파일은 수정 또는 미추적 상태로 남겼다. 스테이징·커밋·푸시는 수행하지 않았다.
 
 이번 변경은 Notice 범위의 DB 조회·쓰기와 관리자 공지 보안에 한정된다. 기존 Identity 업무 코드와 스키마, V1~V9, 인증 ERD 및 원본 기능/API v2.1에 적용한 변경은 없다. 실제 운영·개발 DB와 배포 환경은 미검증이다.
+
+## 5단계 — ERD 경로 정리와 공지 이미지 저장소 검토
+
+공지 ERD를 `docs/NOSPO_Notice.erd.json`에서 `erd/NOSPO_Notice.erd.json`으로 이동했다. ERD 내용, 인증 ERD, Flyway V1~V10을 보존했다. 이 문서의 ERD 링크와 `MySqlNoticeMigrationTests`의 파일 경로를 갱신했다. 앞 단계의 변경 파일 목록에는 당시 경로를 남겼다.
+
+### 기존 저장 구조와 결정
+
+회원 프로필은 `PUT /api/v1/me/profile-image`의 multipart `file`로 업로드한다. Spring MVC 설정은 파일 5 MiB, 요청 6 MiB다. `ImageIoProfileCodec`은 선언 MIME이나 확장자 대신 ImageIO 판독 형식으로 JPEG·PNG·WebP를 확인하고, 애니메이션을 차단하며 각 축이 최대 4096인 이미지를 PNG로 재인코딩한다. WebP에는 TwelveMonkeys ImageIO 플러그인을 사용한다.
+
+`ProfileStore`의 JDBC 구현은 회원당 PNG 한 장을 `member_profile_image.png_data`의 `MEDIUMBLOB`에 저장한다. 갱신은 기존 행을 교체하고 명시적 삭제는 행과 회원 이미지 참조를 제거한다. 탈퇴 시 이미지를 복구 자료에 보관하고 활성 행을 삭제하며, 복구 시 복원한다. DB가 보존되면 서버 재시작과 재배포 후에도 읽을 수 있는 구조다. 조회 URL은 ACTIVE 회원의 JWT와 유효 세션으로 접근하는 상대 경로 `GET /api/v1/me/profile-image`다.
+
+저장소 B로 판단해 공지 이미지 API 구현을 보류했다. 확인한 저장소 코드, Gradle 의존성 및 설정에는 재사용 가능한 범용 파일 어댑터, 객체 스토리지나 별도 파일 서버 연동, 공개 이미지 제공 설정이 없었다. 배포 환경의 영속 저장소와 독립 테스트 저장 위치도 확인되지 않았다. 회원별 DB 저장과 인증 기반 조회를 공지 이미지 저장에 도입하지 않았다.
+
+### 차후 구현안
+
+- `POST /api/v1/admin/notices/images`에 `multipart/form-data`의 `file` 한 개를 받는 안이다. 기존 관리자 공지 경로와 프로필 필드명을 따른다. 별도 정적 업로드 경로로 분류하고 `/{noticeId}` 상세 경로 및 ADMIN·CORS·CSRF 경로 매칭을 함께 검증한다.
+- 유효 JWT와 세션, ACTIVE 회원, 현재 DB `member.role`의 ADMIN, 필수 약관 준수를 검사한다. 미재동의 ADMIN은 403 `TERMS_RECONSENT_REQUIRED` 정책을 적용한다. 관리자 목록에서 받은 CSRF 세션 쿠키와 `X-CSRF-TOKEN`을 허용 Origin에서 Bearer JWT와 함께 전달한다.
+- 최초 허용안은 정적 JPEG·PNG와 파일 5 MiB/요청 6 MiB다. 확장자·선언 MIME·시그니처·디코딩 결과가 일치하는지 확인하고 SVG, 애니메이션, 위장 파일을 거부한다. 입력 크기, 픽셀 수, 동시 디코딩, 재인코딩 출력 크기를 제한한다. 원본 파일명을 키나 경로에 사용하지 않고 서버 생성 키와 덮어쓰기 방지 기능을 쓴다.
+- 저장 성공 시 201 `data/meta`에 불투명한 `imageId`를 반환하고, 접근 모델 확정 후 실제로 제공되는 조회 URL을 포함할 수 있다. 오류는 `error/meta`를 사용한다. 후보는 400 `INVALID_REQUEST`(누락·빈 파일·잘못된 multipart), 413 `IMAGE_TOO_LARGE`, 415(요청 Content-Type 불일치), 422 `INVALID_IMAGE`, 503(저장소 일시 장애)다. 415·503의 오류 코드 및 최종 계약은 구현 시 확정한다. 응답과 로그에서 내부 경로와 자격 증명을 제외한다.
+- 업로드는 독립 자원 생성으로 제한한다. 공지 화면에 표시하려면 이미지 식별자 연결 및 읽기 계약, 게시 전 접근, 공개 전환, 비공개·삭제 후 조회와 캐시 정책을 별도로 정해야 한다. 업로드 단계에서 본문 삽입이나 첨부 관계 생성을 수행하지 않는다.
+- 팀에서 운영 영속 저장소와 독립 테스트 위치, 접근 방식(공개 CDN 또는 권한을 검증하는 조회), 보존 기간, 미사용 판단 근거, 속도·용량 제한을 정한다. 저장 후 응답·메타데이터 처리 실패에는 재시도 중복과 고아 객체를 고려해 보상 삭제 또는 재조정을 설계한다. 미사용 객체는 유예 기간과 참조 확인을 거쳐 정리한다. Notice Soft Delete에 객체 삭제를 연동하려면 별도 합의가 필요하다. 업로드 상태나 연결 관계의 영속화가 필요한 경우 신규 마이그레이션을 검토한다.
+
+기존 공지 7개 API, 고정 우선 공개 정렬과 생성 시각 기반 관리자 정렬, 커서, 최초 게시 시각, 논리 삭제, JWT·현재 역할·재동의·CSRF에 기능 변경은 없다. 팀의 Notice 예외는 v2.1 공통 관리자 감사 요구와 구분된다. Notice는 전용 감사 테이블과 변경 사유 없이 `deleted_at`을 사용하며 동일 필드는 마지막 갱신이 우선한다. 공식 원본은 그대로 유지했다. H2 Refresh·탈퇴 잠금 경합은 별도 Known Issue다.
+
+### 검증
+
+이동 전후 ERD SHA-256이 일치하고 UTF-8 JSON과 현재 링크를 확인했다. MySQL 8.4.7 Testcontainers의 `MySqlNoticeMigrationTests` 1/1이 통과했다(실패·오류·스킵 0). 테스트는 Spring 앱을 띄우지 않고 컨테이너가 제공한 JDBC 접속값을 Flyway에 직접 주입하므로 `.env`의 DB 설정을 사용하지 않는다. V8→V9→V10 적용, 기존 행 보존, 새 위치의 ERD와 스키마 정합성을 확인했다. 개발·운영 DB, 파일 저장소, SMTP, Kakao 호출은 없었다. 기능 코드 변경이 없어 H2, 기타 MySQL, 단위 및 전체 회귀를 재실행하지 않았다. 위 4단계 전체 1405/1405는 이전 실행 기록이다.
+
+## 6단계 — 관리자 공지 이미지 업로드
+
+팀 최종 합의에 따라 이미지 업로드와 결과 반환만 제공한다. 5단계에서는 범용 저장소, 접근 방식, 영속 배포 구성을 확인하지 못해 구현을 보류했다. 6단계에서도 재사용 가능한 범용 저장소는 확인되지 않았다. 프로필의 ImageIO 재인코딩과 MySQL 저장 패턴을 참고해 독립적인 `notice_image` 테이블을 추가했다. Notice 경로는 JDK의 정적 JPEG·PNG 판독만 사용한다. 회원 프로필의 TwelveMonkeys WebP 지원과 저장 경로는 기존 구현을 유지한다.
+
+### 요청과 응답
+
+`POST /api/v1/admin/notices/images`에 `multipart/form-data`의 `file` 한 개를 전송한다. 허용 Origin에서 Bearer JWT와 관리자 목록 GET으로 발급받은 CSRF 세션 쿠키 및 `X-CSRF-TOKEN`을 함께 전달한다. JWT 서명·만료와 세션, ACTIVE 상태, 현재 DB `member.role`의 ADMIN, 필수 약관 재동의를 기존 관리자 공지와 같은 검사로 처리한다. 업로드는 관리자 공지 전용 CSRF 필터가 헤더를 검사한 뒤 MVC에서 multipart를 읽고 디코딩한다.
+
+MySQL 커밋 뒤 201을 반환한다. `data.imageId`는 새 UUID이며 `meta.requestId`는 기존 공통 추적 ID다.
+
+```json
+{"data":{"imageId":"550e8400-e29b-41d4-a716-446655440000"},"meta":{"requestId":"00000000-0000-0000-0000-000000000001"}}
+```
+
+| 상태 | 공통 오류 코드 |
+| --- | --- |
+| 400 | `INVALID_REQUEST` — 빈 파일, 누락·중복 파일, 잘못된 multipart 또는 요청 Content-Type |
+| 401 | `INVALID_CREDENTIALS` — 미인증, JWT 만료, 세션 폐기 등 |
+| 403 | `FORBIDDEN`, `TERMS_RECONSENT_REQUIRED`, `ORIGIN_NOT_ALLOWED` |
+| 413 | `IMAGE_TOO_LARGE` — 파일·요청·PNG 출력 한도 초과 |
+| 422 | `INVALID_IMAGE`, `INVALID_IMAGE_DIMENSIONS`, `ANIMATED_IMAGE_NOT_ALLOWED` |
+| 409 | `REQUEST_IN_PROGRESS` — 기존 공통 DB 경합 처리 |
+| 500 | `INTERNAL_ERROR` — 저장 등 서버 오류 |
+| 503 | `SERVICE_UNAVAILABLE` — 인스턴스의 동시 처리 슬롯 소진 |
+
+오류는 공통 `error/meta`로 반환한다. 이미지 ID는 저장 완료 확인용이다. 조회 URL, 다운로드·목록·삭제 API, 표시·첨부 관계와 Markdown 자동 삽입은 제공 범위에 포함되지 않는다.
+
+### 검증과 영속성
+
+파일 최대 5 MiB, multipart 요청 최대 6 MiB, 축별 최대 4096픽셀과 전체 8,388,608픽셀 한도를 적용한다. 확장자와 선언 MIME, 파일 시그니처 및 ImageIO 디코딩을 확인한다. PNG 청크 CRC와 종결 위치를 검증하고 APNG 청크, SVG·WebP 등 다른 형식과 이미지로 위장한 파일을 거부한다. 원본 메타데이터를 제외한 픽셀을 PNG로 다시 쓰며 출력은 최대 16 MiB−1이다. 인스턴스당 동시 읽기·디코딩·저장 처리는 두 건으로 제한한다. 원본 파일명은 형식 확인에만 사용한다.
+
+`V11__notice_image.sql`은 `image_id BINARY(16)` PK, `png_data MEDIUMBLOB NOT NULL`, `created_at DATETIME(6) NOT NULL` 및 빈 바이너리 방지 CHECK를 추가한다. PNG 형식이 고정되어 MIME 컬럼이 필요 없다. 서버가 UUID를 발급하고 단일 트랜잭션에서 INSERT한다. 키 중복 시 기존 행의 덮어쓰기를 금지하며 저장 중 예외는 롤백한다. 응답 반환 전에 저장을 완료한다. 기존 V1~V10과 테이블은 보존했고 `erd/NOSPO_Notice.erd.json`에 독립 테이블을 추가했다.
+
+운영 DB에 적용하기 전에 MySQL 패킷 상한과 DB 용량·백업 증가량을 확인해야 한다. 첨부 참조와 정리 정책이 없으므로 업로드 이미지가 장기 보존될 수 있다. 네트워크 오류 뒤 재시도는 새 ID를 발급하므로 중복 데이터가 생길 수 있다. 업로드 속도 제한, 용량 감시와 보존 기준은 운영 과제다. 기존 H2 Refresh·탈퇴 잠금 경합은 별도 Known Issue다.
+
+### 테스트 결과
+
+선별 검증은 30/30으로 H2 14/14, MySQL Testcontainers 16/16이 통과했다. 실패·오류·스킵은 0건이다. 최초 컴파일에서 CSRF 핸들러의 final 클래스 상속을 합성으로 수정했다. 이후 선별 첫 실행에서 미인증 업로드가 공통 CSRF에서 먼저 403이 되는 문제와 저장 시각 테스트의 자료형 불일치로 4건이 실패했다. 업로드 경로가 관리자 공지 전용 CSRF 검사를 사용하도록 정리하고 시각 비교를 수정한 뒤 30건을 다시 확인했다.
+
+H2 2.5.250 테스트 프로필과 MySQL 8.4.7 임시 컨테이너를 사용했다. 테스트 전 외부 `env.properties`와 상속 설정 여부를 확인했으며, 클래스패스 프로필 및 인메모리 대체값으로 격리했다. 각 MySQL 테스트가 컨테이너 URL과 자격 증명을 DataSource에 공급한다. `.env`의 실제 DB 설정을 사용하지 않았으며 개발·운영 DB 접속이나 Flyway 적용, 실제 SMTP·Kakao 호출, 외부 파일 저장소 사용은 없었다. 공식 ERD Editor 5.1.0 파서의 읽기·재직렬화, 공식 JSON 스키마, MySQL의 신규 컬럼·PK·CHECK를 검증했다. [ERD Editor JSON 스키마 문서](https://docs.erd-editor.io/docs/api/advanced/schema/)
+
+최종 전체 Gradle 회귀는 한 차례 실행해 1413/1413을 통과했다. H2 625/625, MySQL Testcontainers 751/751, DB 비의존 단위 37/37이며 실패·오류·스킵은 각각 0건이다. 기존 Notice 7개 API와 Identity 회귀를 포함한다. 4단계의 전체 1405/1405는 이전 실행 기록이다. 선별·전체 실행 로그는 각각 `build/notice-phase6-selected.log`, `build/notice-phase6-full.log`에 남겼다.
