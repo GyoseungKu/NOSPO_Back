@@ -1,5 +1,8 @@
 package kr.nospo.identity.web;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 import jakarta.servlet.http.*;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
@@ -13,6 +16,7 @@ import org.springframework.web.bind.annotation.*;
 import java.time.*;
 import java.util.*;
 
+@Tag(name = "카카오 로그인", description = "카카오 OAuth 리다이렉트 및 인증 결과 교환")
 @RestController
 @RequestMapping("/api/v1/auth/kakao")
 public class KakaoOAuthController {
@@ -38,6 +42,8 @@ public class KakaoOAuthController {
         return request.getParameterMap().entrySet().stream()
                 .allMatch(e -> allowed.contains(e.getKey()) && e.getValue().length == 1);
     }
+    @Operation(summary = "카카오 로그인 시작", description = "카카오 인증 페이지로 이동합니다. 선택적으로 returnPath를 전달할 수 있으며 인증 흐름 쿠키를 설정합니다.")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "302", description = "인증 페이지 또는 프런트엔드로 리다이렉트")
     @GetMapping("/authorize")
     public ResponseEntity<Void> authorize(@RequestParam(required=false) String returnPath,
             @AuthenticationPrincipal Jwt jwt, HttpServletRequest request) {
@@ -47,6 +53,8 @@ public class KakaoOAuthController {
                 .header(HttpHeaders.SET_COOKIE, flowCookie(result.cookie(), 300))
                 .header("Referrer-Policy", "no-referrer").build();
     }
+    @Operation(summary = "카카오 인증 콜백", description = "카카오가 호출하는 콜백입니다. state와 인증 흐름 쿠키를 확인한 후 프런트엔드 콜백으로 exchangeCode 또는 error를 전달합니다.")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "302", description = "인증 페이지 또는 프런트엔드로 리다이렉트")
     @GetMapping("/callback")
     public ResponseEntity<Void> callback(HttpServletRequest request) {
         String cookie = null;
@@ -63,6 +71,8 @@ public class KakaoOAuthController {
                 .header(HttpHeaders.SET_COOKIE, flowCookie("", 0))
                 .header("Referrer-Policy", "no-referrer").build();
     }
+    @Operation(summary = "카카오 인증 결과 교환", description = "콜백에서 받은 exchangeCode를 제출하여 인증 결과를 받습니다. 로그인 결과인 경우 refreshToken 쿠키를 설정합니다.")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 또는 처리 성공")
     @PostMapping("/exchange")
     public ResponseEntity<?> exchange(@Valid @RequestBody Exchange input,
             @AuthenticationPrincipal Jwt jwt, HttpServletRequest request) {

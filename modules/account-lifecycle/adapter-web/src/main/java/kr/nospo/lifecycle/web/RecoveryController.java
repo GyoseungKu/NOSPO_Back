@@ -1,5 +1,8 @@
 package kr.nospo.lifecycle.web;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 import kr.nospo.lifecycle.application.*;
@@ -12,6 +15,7 @@ import org.springframework.web.bind.annotation.*;
 import java.time.*;
 import java.util.*;
 
+@Tag(name = "계정 복구", description = "복구 인증 후 계정 복구 완료")
 @RestController
 @RequestMapping("/api/v1/auth/recovery")
 public class RecoveryController {
@@ -26,6 +30,8 @@ public class RecoveryController {
     public RecoveryController(RecoveryService service,DatabaseGuard guard,Clock clock,@Value("${nospo.auth.secure-cookie:true}") boolean secure) {
         this.service=service;this.guard=guard;this.clock=clock;this.secure=secure;
     }
+    @Operation(summary = "계정 복구 완료", description = "복구 인증에서 발급받은 recoveryProof와 약관 동의 내역을 제출합니다. 복구 결과와 refreshToken 쿠키를 반환합니다.")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 또는 처리 성공")
     @PostMapping("/complete")
     public ResponseEntity<ApiResponse<SignupResult>> complete(@Valid @RequestBody Request request,jakarta.servlet.http.HttpServletRequest http) {
         guard.rateLimit("recovery-complete:"+http.getRemoteAddr(),30,Duration.ofMinutes(15),clock.instant());

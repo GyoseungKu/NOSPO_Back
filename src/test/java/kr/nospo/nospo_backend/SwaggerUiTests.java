@@ -38,4 +38,32 @@ class SwaggerUiTests {
         mvc.perform(get("/me").accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isUnauthorized());
     }
+
+    @Test
+    void everyApiOperationHasDocumentation() throws Exception {
+        var response = mvc.perform(get("/v3/api-docs")).andExpect(status().isOk()).andReturn();
+        var document = new tools.jackson.databind.ObjectMapper()
+                .readTree(response.getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8));
+        int operations = 0;
+        for (var path : document.path("paths").properties()) {
+            if (!path.getKey().startsWith("/api/v1/")) continue;
+            for (String method : java.util.List.of("get", "post", "put", "patch", "delete")) {
+                var operation = path.getValue().get(method);
+                if (operation == null) continue;
+                String endpoint = method + " " + path.getKey();
+                org.junit.jupiter.api.Assertions.assertFalse(operation.path("summary").asText().isBlank(), endpoint);
+                org.junit.jupiter.api.Assertions.assertFalse(operation.path("description").asText().isBlank(), endpoint);
+                org.junit.jupiter.api.Assertions.assertFalse(operation.path("tags").isEmpty(), endpoint);
+                if (path.getKey().equals("/api/v1/me") || path.getKey().startsWith("/api/v1/me/")) {
+                    org.junit.jupiter.api.Assertions.assertTrue(
+                            operation.path("security").toString().contains("bearerAuth"), endpoint);
+                }
+                operations++;
+            }
+        }
+        org.junit.jupiter.api.Assertions.assertTrue(operations > 0);
+        org.junit.jupiter.api.Assertions.assertTrue(document.at("/paths/~1api~1v1~1auth~1signup/post/responses").has("201"));
+        org.junit.jupiter.api.Assertions.assertTrue(document.at("/paths/~1api~1v1~1auth~1kakao~1authorize/get/responses").has("302"));
+        org.junit.jupiter.api.Assertions.assertTrue(document.at("/paths/~1api~1v1~1me~1withdrawal/post/responses").has("204"));
+    }
 }

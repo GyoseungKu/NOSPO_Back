@@ -1,5 +1,8 @@
 package kr.nospo.identity.web;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 import kr.nospo.identity.application.KakaoAccountService;
@@ -11,6 +14,8 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 import java.util.*;
 
+@Tag(name = "카카오 계정 연결", description = "카카오 재인증 및 로그인 수단 연결")
+@io.swagger.v3.oas.annotations.security.SecurityRequirement(name = "bearerAuth")
 @RestController
 @RequestMapping("/api/v1/me")
 public class KakaoAccountController {
@@ -34,14 +39,20 @@ public class KakaoAccountController {
                         .sameSite("Lax").path("/api/v1/auth/kakao/callback").maxAge(300).build().toString())
                 .body(ApiResponse.of(Map.of("authorizationUrl", result.authorizationUrl())));
     }
+    @Operation(summary = "카카오 재인증 시작", description = "작업 목적 purpose에 대한 카카오 재인증 URL을 반환하고 인증 흐름 쿠키를 설정합니다.")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 또는 처리 성공")
     @PostMapping("/reauth/kakao")
     public ResponseEntity<?> reauthenticate(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody Reauth input) {
         return started(service.reauthenticate(member(jwt), session(jwt), input.purpose()));
     }
+    @Operation(summary = "카카오 연결 인증 시작", description = "reauthProof로 카카오 연결 인증 URL을 발급받고 인증 흐름 쿠키를 설정합니다.")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 또는 처리 성공")
     @PostMapping("/login-methods/kakao/authorization")
     public ResponseEntity<?> authorize(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody Authorization input) {
         return started(service.authorizeLink(member(jwt), session(jwt), input.reauthProof()));
     }
+    @Operation(summary = "카카오 계정 연결 완료", description = "카카오 인증 후 받은 linkProof로 연결을 완료합니다. Idempotency-Key에 UUID를 전달합니다.")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 또는 처리 성공")
     @PostMapping("/login-methods/kakao")
     public ApiResponse<KakaoAccountService.Linked> link(@AuthenticationPrincipal Jwt jwt,
             @RequestHeader("Idempotency-Key") UUID key, @Valid @RequestBody Link input) {

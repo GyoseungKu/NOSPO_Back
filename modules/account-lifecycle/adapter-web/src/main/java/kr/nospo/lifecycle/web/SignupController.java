@@ -1,5 +1,8 @@
 package kr.nospo.lifecycle.web;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 
@@ -16,6 +19,7 @@ import java.security.Principal;
 import java.time.*;
 import java.util.*;
 
+@Tag(name = "회원가입 및 내 정보", description = "이메일 회원가입, 닉네임 중복 확인 및 내 정보 조회")
 @RestController
 @RequestMapping("/api/v1")
 public class SignupController {
@@ -44,11 +48,15 @@ public class SignupController {
         this.secureCookie = secureCookie;
     }
 
+    @Operation(summary = "닉네임 사용 가능 여부", description = "닉네임의 사용 가능 여부를 available 값으로 반환합니다.")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 또는 처리 성공")
     @GetMapping("/auth/availability/nickname")
     public ApiResponse<Map<String, Boolean>> available(@RequestParam String nickname) {
         return ApiResponse.of(Map.of("available", service.nicknameAvailable(nickname)));
     }
 
+    @Operation(summary = "이메일 회원가입", description = "이메일 인증으로 받은 emailProof, 비밀번호, 회원 정보와 약관 동의를 제출합니다. Idempotency-Key에 UUID를 전달합니다. 가입 결과와 refreshToken 쿠키를 반환합니다.")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "201", description = "생성 완료")
     @PostMapping("/auth/signup")
     public ResponseEntity<ApiResponse<SignupResult>> signup(
             @RequestHeader("Idempotency-Key") UUID key,
@@ -83,6 +91,8 @@ public class SignupController {
                 .body(ApiResponse.of(result.data()));
     }
 
+    @Operation(summary = "내 회원 정보 조회", description = "로그인한 회원의 정보를 조회합니다. Bearer 액세스 토큰이 필요합니다.")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 또는 처리 성공")
     @GetMapping("/me")
     public ApiResponse<SignupResult.Member> me(Principal principal) {
         return ApiResponse.of(service.me(UUID.fromString(principal.getName())));

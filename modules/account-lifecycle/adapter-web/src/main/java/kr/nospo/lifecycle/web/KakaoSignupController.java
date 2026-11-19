@@ -1,5 +1,8 @@
 package kr.nospo.lifecycle.web;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
@@ -15,6 +18,7 @@ import org.springframework.web.bind.annotation.*;
 import java.time.*;
 import java.util.*;
 
+@Tag(name = "카카오 회원가입", description = "카카오 인증 후 가입 정보 확인 및 회원가입")
 @RestController
 @RequestMapping("/api/v1/auth/signup/kakao")
 public class KakaoSignupController {
@@ -46,6 +50,8 @@ public class KakaoSignupController {
         this.secureCookie = secureCookie;
     }
 
+    @Operation(summary = "카카오 가입 정보 조회", description = "카카오 인증으로 받은 signupProof를 전달하여 가입에 필요한 정보를 조회합니다.")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 또는 처리 성공")
     @PostMapping("/context")
     public ApiResponse<KakaoSignupIdentity.Context> context(
             @Valid @RequestBody ContextRequest request, HttpServletRequest http) {
@@ -53,6 +59,8 @@ public class KakaoSignupController {
         return ApiResponse.of(identity.context(request.signupProof()));
     }
 
+    @Operation(summary = "카카오 회원가입", description = "signupProof, 회원 정보와 약관 동의 내역으로 가입합니다. Idempotency-Key에 UUID를 전달합니다. 가입 결과와 refreshToken 쿠키를 반환합니다.")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "201", description = "생성 완료")
     @PostMapping
     public ResponseEntity<ApiResponse<SignupResult>> signup(@RequestHeader("Idempotency-Key") UUID key,
             @Valid @RequestBody Request request, HttpServletRequest http) {
