@@ -1,5 +1,6 @@
 package kr.nospo.nospo_backend;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -16,6 +17,89 @@ import org.springframework.test.web.servlet.MockMvc;
 class SwaggerUiTests {
 
     @Autowired MockMvc mvc;
+
+    @Test
+    void noticeDocumentationMatchesRequestAndResponseContracts() throws Exception {
+        var response = mvc.perform(get("/v3/api-docs")).andDo(result -> {
+            if (result.getResolvedException() != null) throw result.getResolvedException();
+        }).andExpect(status().isOk()).andReturn();
+        var document = new tools.jackson.databind.ObjectMapper()
+                .readTree(response.getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8));
+        var paths = document.path("paths");
+        var publicList = paths.path("/api/v1/notices").path("get");
+        var publicRead = paths.path("/api/v1/notices/{noticeId}").path("get");
+        var adminList = paths.path("/api/v1/admin/notices").path("get");
+        var adminRead = paths.path("/api/v1/admin/notices/{noticeId}").path("get");
+        var create = paths.path("/api/v1/admin/notices").path("post");
+        var patch = paths.path("/api/v1/admin/notices/{noticeId}").path("patch");
+        var delete = paths.path("/api/v1/admin/notices/{noticeId}").path("delete");
+        var upload = paths.path("/api/v1/admin/notices/images").path("post");
+        var operations = java.util.List.of(publicList, publicRead, adminList, adminRead, create, patch, delete, upload);
+        var ids = java.util.List.of("listPublicNotices", "getPublicNotice", "listAdminNotices", "getAdminNotice",
+                "createNotice", "patchNotice", "deleteNotice", "uploadNoticeImage");
+        var statuses = java.util.List.of("200", "200", "200", "200", "201", "200", "204", "201");
+        for (int i = 0; i < operations.size(); i++) {
+            var op = operations.get(i);
+            assertThat(op.path("operationId").asText()).isEqualTo(ids.get(i));
+            assertThat(op.at("/tags/0").asText()).isEqualTo(i < 2 ? "공개 공지" : "관리자 공지");
+            assertThat(op.path("security").toString().contains("bearerAuth")).isEqualTo(i >= 2);
+            var success = op.path("responses").path(statuses.get(i));
+            if (i == 6) {
+                assertThat(success.has("content")).isFalse();
+                assertThat(op.has("requestBody")).isFalse();
+            } else {
+                assertThat(success.at("/content/application~1json/example/meta/requestId").asText()).isNotBlank();
+            }
+            assertThat(op.at("/responses/400/content/application~1json/examples").isObject()).isTrue();
+        }
+        assertThat(document.at("/components/securitySchemes/bearerAuth/scheme").asText()).isEqualTo("bearer");
+        for (var byId : java.util.List.of(publicRead, adminRead, patch, delete)) {
+            assertThat(byId.at("/parameters/0/in").asText()).isEqualTo("path");
+            assertThat(byId.at("/parameters/0/required").asBoolean()).isTrue();
+            assertThat(byId.at("/parameters/0/schema/format").asText()).isEqualTo("uuid");
+            assertThat(byId.path("responses").has("404")).isTrue();
+        }
+        for (var list : java.util.List.of(publicList, adminList)) {
+            assertThat(list.at("/parameters/0/schema/default").asText()).isEqualTo("latest");
+            assertThat(list.at("/parameters/0/schema/enum/1").asText()).isEqualTo("oldest");
+            assertThat(list.at("/parameters/1/schema/default").asInt()).isEqualTo(20);
+            assertThat(list.at("/parameters/1/schema/minimum").asInt()).isEqualTo(1);
+            assertThat(list.at("/parameters/1/schema/maximum").asInt()).isEqualTo(100);
+            assertThat(list.at("/parameters/2/required").asBoolean()).isFalse();
+            assertThat(list.at("/responses/200/content/application~1json/example/data/nextCursor").isNull()).isTrue();
+            assertNullable(list.at("/responses/200/content/application~1json/schema/properties/data/properties/nextCursor"));
+        }
+        var publishedAt = "/responses/200/content/application~1json/schema/properties/data/properties/publishedAt";
+        assertNullable(adminRead.at(publishedAt));
+        assertThat(publicRead.at(publishedAt).toString()).doesNotContain("null");
+        assertThat(adminList.at("/responses/200/headers/X-CSRF-TOKEN").isObject()).isTrue();
+        for (var write : java.util.List.of(create, patch, delete, upload)) {
+            var parameters = write.path("parameters");
+            var csrf = parameters.get(parameters.size() - 1);
+            assertThat(csrf.path("name").asText()).isEqualTo("X-CSRF-TOKEN");
+            assertThat(csrf.path("in").asText()).isEqualTo("header");
+            assertThat(csrf.path("required").asBoolean()).isTrue();
+            assertThat(write.at("/responses/403/content/application~1json/examples").has("TERMS_RECONSENT_REQUIRED")).isTrue();
+        }
+        assertThat(create.at("/requestBody/content/application~1json/schema/required").size()).isEqualTo(5);
+        assertThat(patch.at("/requestBody/content/application~1json/schema/minProperties").asInt()).isEqualTo(1);
+        var uploadSchema = upload.at("/requestBody/content/multipart~1form-data/schema");
+        assertThat(uploadSchema.at("/required/0").asText()).isEqualTo("file");
+        assertThat(uploadSchema.at("/properties/file/format").asText()).isEqualTo("binary");
+        assertThat(uploadSchema.at("/properties/file/type").toString()).contains("\"string\"");
+        assertThat(upload.at("/responses/201/content/application~1json/example/data").size()).isEqualTo(1);
+        for (var status : java.util.List.of("401", "403", "409", "413", "422", "500", "503")) {
+            assertThat(upload.path("responses").has(status)).isTrue();
+        }
+        var error = upload.at("/responses/422/content/application~1json/examples/INVALID_IMAGE/value/error");
+        assertThat(error.path("message").asText()).isEqualTo("요청을 처리할 수 없습니다.");
+        assertThat(error.path("details").isArray()).isTrue();
+    }
+
+    private static void assertNullable(tools.jackson.databind.JsonNode schema) {
+        assertThat(schema.path("nullable").asBoolean()
+                || schema.path("type").toString().contains("\"null\"")).isTrue();
+    }
 
     @Test
     void documentationIsAccessibleWithoutLogin() throws Exception {

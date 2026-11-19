@@ -360,3 +360,17 @@ MySQL 커밋 뒤 201을 반환한다. `data.imageId`는 새 UUID이며 `meta.req
 H2 2.5.250 테스트 프로필과 MySQL 8.4.7 임시 컨테이너를 사용했다. 테스트 전 외부 `env.properties`와 상속 설정 여부를 확인했으며, 클래스패스 프로필 및 인메모리 대체값으로 격리했다. 각 MySQL 테스트가 컨테이너 URL과 자격 증명을 DataSource에 공급한다. `.env`의 실제 DB 설정을 사용하지 않았으며 개발·운영 DB 접속이나 Flyway 적용, 실제 SMTP·Kakao 호출, 외부 파일 저장소 사용은 없었다. 공식 ERD Editor 5.1.0 파서의 읽기·재직렬화, 공식 JSON 스키마, MySQL의 신규 컬럼·PK·CHECK를 검증했다. [ERD Editor JSON 스키마 문서](https://docs.erd-editor.io/docs/api/advanced/schema/)
 
 최종 전체 Gradle 회귀는 한 차례 실행해 1413/1413을 통과했다. H2 625/625, MySQL Testcontainers 751/751, DB 비의존 단위 37/37이며 실패·오류·스킵은 각각 0건이다. 기존 Notice 7개 API와 Identity 회귀를 포함한다. 4단계의 전체 1405/1405는 이전 실행 기록이다. 선별·전체 실행 로그는 각각 `build/notice-phase6-selected.log`, `build/notice-phase6-full.log`에 남겼다.
+
+## 7단계 — Notice OpenAPI 문서화
+
+`/swagger-ui/index.html`의 **공개 공지**(2개), **관리자 공지**(6개) 태그에서 목록·상세, 등록·부분 수정·논리 삭제와 이미지 업로드를 확인할 수 있다. 각 HTTP 메서드와 경로에 고유한 `operationId`, 한국어 설명, 파라미터·요청 스키마, 실제 성공 상태 및 공통 오류 예시를 연결했다.
+
+`NoticeOpenApiConfig`는 기존 Springdoc과 `bearerAuth`를 사용하며, Notice 8개 작업의 문서만 보완한다. 자동 추론이 어려운 `JsonNode`의 등록 필수 5개 필드와 PATCH 최소 1개 필드, 단일 multipart `file`, 공개·관리자별 목록 및 응답 스키마를 명시했다. DTO나 모듈 의존성을 변경하지 않고 OpenAPI 모델에 필드 설명을 정의했다. `nextCursor`와 관리자 `publishedAt`은 nullable이며, 공개 공지의 `publishedAt`은 필수 게시 시각이다. 삭제 204에는 응답 콘텐츠를 지정하지 않았다. 공통 오류 예시의 메시지는 실제 서버 메시지인 `요청을 처리할 수 없습니다.`이고 `details`는 빈 배열이다.
+
+공개 목록은 고정 우선, 관리자 목록은 생성 시각 기준이다. 정렬을 바꾸면 커서를 초기화하고 공개·관리자 커서를 섞지 않는다. 상세의 `content`는 Markdown 원문이므로 프론트에서 원시 HTML과 위험한 링크를 차단한다. 업로드 응답의 `imageId`는 저장 완료를 식별하며 이미지 조회·표시 계약은 제공 범위 밖이다.
+
+관리자 요청은 유효 JWT·활성 세션·ACTIVE·현재 DB ADMIN·필수 약관 재동의가 필요하다. Swagger UI의 Authorize에 액세스 토큰을 입력한 뒤, 관리자 목록 GET의 `X-CSRF-TOKEN`을 쓰기 요청 헤더에 전달한다. 같은 브라우저 세션 쿠키가 함께 전송되어야 한다. 프론트는 허용 Origin에서 `credentials: include`를 적용하고 CORS가 노출하는 `X-CSRF-TOKEN`을 읽는다. 브라우저가 `Set-Cookie`를 처리하며, CORS 필터 선차단은 공통 JSON 없이 403으로 응답할 수 있다. 공개 경로도 잘못된 Bearer를 명시하면 401을 반환할 수 있다.
+
+API 동작, 응답 직렬화, 접근 제어, ERD 및 Flyway V1~V11은 유지했다. Swagger의 기존 서버 URL을 유지하며, 실제 배포 환경에서 Try it out을 호출하는 검증은 이번 범위에 포함하지 않았다.
+
+최종 선별 테스트는 33/33을 통과했다. H2 18/18에는 Swagger 4건이 포함되며, MySQL 8.4.7 Testcontainers는 15/15였다. 실패·오류·스킵은 각각 0건이다. MockMvc에서 Swagger UI와 설정 페이지, 실제 생성된 `/v3/api-docs`의 경로·스키마·오류 예시를 확인했고 공개 조회와 관리자 CRUD·권한·이미지 업로드를 선별 회귀했다. 테스트는 외부 설정을 배제한 클래스패스 테스트 프로필과 임시 DB만 사용했다. 개발·운영 DB와 실제 SMTP·Kakao를 호출하지 않았다. 문서화 범위에 따라 6단계 전체 회귀 1413건은 반복하지 않았다.
