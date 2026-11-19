@@ -6,11 +6,14 @@ import jakarta.servlet.http.*;
 import kr.nospo.identity.application.KakaoLinkAccess;
 import kr.nospo.support.ApiErrors;
 import kr.nospo.support.ApiException;
+import kr.nospo.support.SqlIds;
 import kr.nospo.terms.contract.MemberConsents;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.*;
 import org.springframework.http.HttpMethod;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.authorization.AuthorizationDecision;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -18,6 +21,8 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.intercept.AuthorizationFilter;
+import org.springframework.security.web.csrf.CsrfFilter;
+import org.springframework.security.web.csrf.HttpSessionCsrfTokenRepository;
 import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
@@ -34,7 +39,13 @@ public class SecurityConfig {
     private static final PathPatternRequestMatcher.Builder PATHS =
             PathPatternRequestMatcher.withDefaults();
     private static final RequestMatcher API = PATHS.matcher("/api/**");
+    private static final RequestMatcher[] ADMIN_NOTICES = {
+            PATHS.matcher("/api/v1/admin/notices"),
+            PATHS.matcher("/api/v1/admin/notices/{noticeId}")
+    };
     private static final RequestMatcher[] PUBLIC_REQUESTS = {
+            PATHS.matcher(HttpMethod.GET, "/api/v1/notices"),
+            PATHS.matcher(HttpMethod.GET, "/api/v1/notices/{noticeId}"),
             PATHS.matcher(HttpMethod.GET, "/api/v1/terms"),
             PATHS.matcher(HttpMethod.GET, "/api/v1/auth/kakao/authorize"),
             PATHS.matcher(HttpMethod.GET, "/api/v1/auth/kakao/callback"),
@@ -86,6 +97,7 @@ public class SecurityConfig {
             HttpSecurity http,
             ObjectMapper mapper,
             KakaoLinkAccess consentAccess,
+            JdbcTemplate db,
             @Value("${nospo.auth.allowed-origins}") List<String> allowedOrigins)
             throws Exception {
         if (allowedOrigins.isEmpty() || allowedOrigins.contains("*"))
@@ -96,6 +108,11 @@ public class SecurityConfig {
         cors.setAllowedHeaders(List.of("Content-Type", "Authorization", "Idempotency-Key"));
         cors.setAllowCredentials(true);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        var noticeCors = new CorsConfiguration(cors);
+        noticeCors.addAllowedHeader("X-CSRF-TOKEN");
+        noticeCors.addExposedHeader("X-CSRF-TOKEN");
+        source.registerCorsConfiguration("/api/v1/admin/notices", noticeCors);
+        source.registerCorsConfiguration("/api/v1/admin/notices/{noticeId}", noticeCors);
         source.registerCorsConfiguration("/api/**", cors);
         return http.cors(c -> c.configurationSource(source))
                 .csrf(
@@ -128,6 +145,10 @@ public class SecurityConfig {
                                                 "/v3/api-docs.yaml")
                                         .permitAll()
                                         .requestMatchers(PUBLIC_REQUESTS).permitAll()
+                                        .requestMatchers(ADMIN_NOTICES)
+                                        .access((authentication, context) -> new AuthorizationDecision(
+                                                authentication.get() instanceof JwtAuthenticationToken jwt
+                                                        && jwt.isAuthenticated() && activeAdmin(db, jwt)))
                                         .anyRequest()
                                         .authenticated())
                 .oauth2ResourceServer(
@@ -151,7 +172,9 @@ public class SecurityConfig {
                                                                 "INVALID_CREDENTIALS"))
                                         .accessDeniedHandler(
                                                 (r, s, x) ->
-                                                        error(s, mapper, 403, "ACCESS_DENIED")))
+                                                        error(s, mapper, 403,
+                                                                matches(ADMIN_NOTICES, r)
+                                                                        ? "FORBIDDEN" : "ACCESS_DENIED")))
                 .addFilterBefore(
                         new OncePerRequestFilter() {
                             protected void doFilterInternal(
@@ -211,7 +234,38 @@ public class SecurityConfig {
                             }
                         },
                         AuthorizationFilter.class)
+                .addFilterAfter(noticeAdminCsrf(mapper), AuthorizationFilter.class)
                 .build();
+    }
+
+    private static OncePerRequestFilter noticeAdminCsrf(ObjectMapper mapper) {
+        // 리소스 서버의 Bearer CSRF 예외와 별도로 관리자 공지 경로를 검사한다.
+        var repository = new HttpSessionCsrfTokenRepository();
+        repository.setSessionAttributeName("NOSPO_NOTICE_ADMIN_CSRF");
+        var csrf = new CsrfFilter(repository);
+        csrf.setBeanName("noticeAdminCsrf");
+        csrf.setAccessDeniedHandler((request, response, failure) -> error(response, mapper, 403, "FORBIDDEN"));
+        return new OncePerRequestFilter() {
+            @Override
+            protected boolean shouldNotFilter(HttpServletRequest request) {
+                return !matches(ADMIN_NOTICES, request);
+            }
+
+            @Override
+            protected void doFilterInternal(
+                    HttpServletRequest request, HttpServletResponse response, FilterChain chain)
+                    throws ServletException, IOException {
+                csrf.doFilter(request, response, chain);
+            }
+        };
+    }
+
+    private static boolean activeAdmin(JdbcTemplate db, JwtAuthenticationToken jwt) {
+        return db.query("""
+                SELECT role FROM member WHERE member_id = ? AND status = 'ACTIVE'
+                """, (row, index) -> row.getString("role"),
+                SqlIds.id(UUID.fromString(jwt.getToken().getSubject()))).stream()
+                .anyMatch("ADMIN"::equals);
     }
 
     private static boolean matches(RequestMatcher[] matchers, HttpServletRequest request) {

@@ -62,6 +62,305 @@ class ConsentHistoryTests extends RecoveryTests {
                 .contentType("application/json").content("{\"nickname\":\"new_reader\"}"));
     }
 
+    @Test void accessGateAdminNoticeWritesAndSoftDeletesWithRealCsrf() throws Exception {
+        var account = emailAccount("notice-write@example.com", "notice_write");
+        jdbc.update("UPDATE member SET role='ADMIN' WHERE member_id=?", id(account.member()));
+        String auth = bearer(account);
+        String path = "/api/v1/admin/notices";
+        String origin = "http://localhost:3000";
+        String draft = """
+                {"title":"draft","summary":"","content":"**body**","pinned":false,"published":false}
+                """;
+        mvc.perform(post(path).header("Authorization", auth).contentType("application/json").content(draft))
+                .andExpect(status().isForbidden());
+        mvc.perform(options(path).header("Origin", origin).header("Access-Control-Request-Method", "POST")
+                .header("Access-Control-Request-Headers", "authorization,content-type,x-csrf-token"))
+                .andExpect(status().isOk());
+        var bootstrap = mvc.perform(get(path).header("Authorization", auth).header("Origin", origin))
+                .andExpect(status().isOk()).andExpect(header().exists("X-CSRF-TOKEN"))
+                .andExpect(header().string("Access-Control-Expose-Headers", "X-CSRF-TOKEN")).andReturn();
+        String csrf = bootstrap.getResponse().getHeader("X-CSRF-TOKEN");
+        var session = (org.springframework.mock.web.MockHttpSession) bootstrap.getRequest().getSession(false);
+        assertThat(session).isNotNull();
+        var created = mvc.perform(post(path).session(session).header("Origin", origin)
+                        .header("X-CSRF-TOKEN", csrf).header("Authorization", auth)
+                        .contentType("application/json").content(draft))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.content").value("**body**"))
+                .andExpect(jsonPath("$.data.publishedAt").value(org.hamcrest.Matchers.nullValue())).andReturn();
+        var data = mapper.readTree(created.getResponse().getContentAsString()).path("data");
+        UUID notice = UUID.fromString(data.path("noticeId").asString());
+        String detail = path + "/" + notice;
+        String publicPath = "/api/v1/notices/" + notice;
+        try {
+            mvc.perform(get(publicPath)).andExpect(status().isNotFound());
+            clock.advance(1);
+            var published = mvc.perform(patch(detail).session(session).header("Origin", origin)
+                            .header("X-CSRF-TOKEN", csrf).header("Authorization", auth)
+                            .contentType("application/json").content("{\"published\":true,\"pinned\":true}"))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.data.title").value("draft"))
+                    .andExpect(jsonPath("$.data.pinned").value(true)).andReturn();
+            var first = mapper.readTree(published.getResponse().getContentAsString()).path("data");
+            assertThat(first.path("publishedAt").asString()).isEqualTo(clock.instant().toString());
+            assertThat(first.path("updatedAt").asString()).isNotEqualTo(data.path("updatedAt").asString());
+            mvc.perform(get(publicPath)).andExpect(status().isOk());
+            for (boolean state : List.of(false, true)) {
+                clock.advance(1);
+                mvc.perform(patch(detail).session(session).header("Origin", origin)
+                                .header("X-CSRF-TOKEN", csrf).header("Authorization", auth)
+                                .contentType("application/json").content("{\"published\":" + state + "}"))
+                        .andExpect(status().isOk())
+                        .andExpect(jsonPath("$.data.publishedAt").value(first.path("publishedAt").asString()));
+                mvc.perform(get(publicPath)).andExpect(status().is(state ? 200 : 404));
+            }
+            mvc.perform(delete(detail).session(session).header("Origin", origin)
+                            .header("X-CSRF-TOKEN", csrf).header("Authorization", auth))
+                    .andExpect(status().isNoContent()).andExpect(content().string(""));
+            assertThat(jdbc.queryForObject("SELECT content FROM notice WHERE notice_id=?", String.class, id(notice)))
+                    .isEqualTo("**body**");
+            assertThat(jdbc.queryForObject("SELECT deleted_at FROM notice WHERE notice_id=?",
+                    java.time.LocalDateTime.class, id(notice))).isEqualTo(PublicNoticeTests.utc(clock.instant()));
+            mvc.perform(get(publicPath)).andExpect(status().isNotFound());
+            mvc.perform(get(detail).header("Authorization", auth)).andExpect(status().isNotFound());
+            clock.advance(1);
+            mvc.perform(delete(detail).session(session).header("Origin", origin)
+                            .header("X-CSRF-TOKEN", csrf).header("Authorization", auth))
+                    .andExpect(status().isNotFound()).andExpect(jsonPath("$.error.code").value("RESOURCE_NOT_FOUND"));
+            assertThat(jdbc.queryForObject("SELECT deleted_at FROM notice WHERE notice_id=?",
+                    java.time.LocalDateTime.class, id(notice))).isEqualTo(PublicNoticeTests.utc(clock.instant().minusSeconds(1)));
+            mvc.perform(patch(detail).session(session).header("Origin", origin)
+                            .header("X-CSRF-TOKEN", csrf).header("Authorization", auth)
+                            .contentType("application/json").content("{\"title\":\"ignored\"}"))
+                    .andExpect(status().isNotFound());
+            reconsentRevision("SERVICE", "2", true);
+            mvc.perform(post(path).session(session).header("Origin", origin)
+                            .header("X-CSRF-TOKEN", csrf).header("Authorization", auth)
+                            .contentType("application/json").content(draft))
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.error.code").value("TERMS_RECONSENT_REQUIRED"));
+        } finally {
+            jdbc.update("DELETE FROM notice WHERE notice_id=?", id(notice));
+        }
+    }
+
+    @Autowired kr.nospo.notice.application.AdminNoticeService adminNoticeWrites;
+
+    @Test void accessGateAdminNoticePatchIsAtomicAndPreservesParallelFields() throws Exception {
+        var account = emailAccount("notice-patch@example.com", "notice_patch");
+        jdbc.update("UPDATE member SET role='ADMIN' WHERE member_id=?", id(account.member()));
+        String auth = bearer(account);
+        String list = "/api/v1/admin/notices";
+        String origin = "http://localhost:3000";
+        var bootstrap = mvc.perform(get(list).header("Authorization", auth).header("Origin", origin))
+                .andExpect(status().isOk()).andReturn();
+        String token = bootstrap.getResponse().getHeader("X-CSRF-TOKEN");
+        var session = (org.springframework.mock.web.MockHttpSession) bootstrap.getRequest().getSession(false);
+        org.springframework.test.web.servlet.request.RequestPostProcessor csrf = request -> {
+            request.setSession(session);
+            request.addHeader("Origin", origin);
+            request.addHeader("X-CSRF-TOKEN", token);
+            return request;
+        };
+        for (String body : List.of("{}", "{\"title\":\"x\"}", "{\"title\":null,\"summary\":\"\",\"content\":\"x\",\"pinned\":false,\"published\":true}")) {
+            mvc.perform(post(list).with(csrf).header("Authorization", auth)
+                    .contentType("application/json").content(body)).andExpect(status().isUnprocessableContent());
+        }
+        var input = Map.of("title", "x".repeat(200), "summary", "s".repeat(500),
+                "content", "a".repeat(50000), "pinned", false, "published", true);
+        var created = mvc.perform(post(list).with(csrf).header("Authorization", auth)
+                        .contentType("application/json").content(mapper.writeValueAsString(input)))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.data.published").value(true))
+                .andExpect(jsonPath("$.data.publishedAt").value(clock.instant().toString())).andReturn();
+        UUID notice = UUID.fromString(mapper.readTree(created.getResponse().getContentAsString())
+                .path("data").path("noticeId").asString());
+        String path = list + "/" + notice;
+        try {
+            for (var bad : List.of(Map.of("title", "a".repeat(201)), Map.of("summary", "a".repeat(501)),
+                    Map.of("content", "a".repeat(50001)), Map.of("content", "  "), Map.of("published", "true"))) {
+                mvc.perform(patch(path).with(csrf).header("Authorization", auth).contentType("application/json")
+                                .content(mapper.writeValueAsString(bad))).andExpect(status().isUnprocessableContent());
+            }
+            mvc.perform(patch(path).with(csrf).header("Authorization", auth).contentType("application/json")
+                    .content("{\"summary\":null}")).andExpect(status().isUnprocessableContent());
+            assertThat(jdbc.queryForObject("SELECT content FROM notice WHERE notice_id=?", String.class, id(notice)))
+                    .isEqualTo(input.get("content"));
+            var go = new CountDownLatch(1);
+            try (var pool = Executors.newFixedThreadPool(2)) {
+                var title = pool.submit(() -> {
+                    go.await();
+                    mvc.perform(patch(path).with(csrf).header("Authorization", auth)
+                                    .contentType("application/json").content("{\"title\":\"first\"}"))
+                            .andExpect(status().isOk());
+                    return true;
+                });
+                var summary = pool.submit(() -> {
+                    go.await();
+                    mvc.perform(patch(path).with(csrf).header("Authorization", auth)
+                                    .contentType("application/json").content("{\"summary\":\"parallel\"}"))
+                            .andExpect(status().isOk());
+                    return true;
+                });
+                go.countDown();
+                title.get(30, TimeUnit.SECONDS);
+                summary.get(30, TimeUnit.SECONDS);
+            }
+            mvc.perform(patch(path).with(csrf).header("Authorization", auth).contentType("application/json")
+                            .content("{\"title\":\"last\"}"))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.data.title").value("last"))
+                    .andExpect(jsonPath("$.data.summary").value("parallel"));
+            assertThatThrownBy(() -> transaction().executeWithoutResult(s -> {
+                adminNoticeWrites.delete(notice);
+                throw new IllegalStateException("rollback fixture");
+            })).isInstanceOf(IllegalStateException.class);
+            mvc.perform(get(path).header("Authorization", auth)).andExpect(status().isOk());
+        } finally {
+            jdbc.update("DELETE FROM notice WHERE notice_id=?", id(notice));
+        }
+    }
+
+    @Test void accessGateAdminNoticeRequiresCurrentRoleAndActiveSession() throws Exception {
+        var account = emailAccount("notice-admin@example.com", "notice_admin");
+        String path = "/api/v1/admin/notices";
+        String auth = bearer(account);
+        mvc.perform(get(path)).andExpect(status().isUnauthorized());
+        mvc.perform(get(path).header("Authorization", auth)).andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("FORBIDDEN"));
+        mvc.perform(post(path).header("Authorization", auth)).andExpect(status().isForbidden());
+        mvc.perform(post(path).with(org.springframework.security.test.web.servlet.request
+                        .SecurityMockMvcRequestPostProcessors.csrf()).header("Authorization", auth))
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.error.code").value("FORBIDDEN"));
+        mvc.perform(post(path).header("Authorization", auth).header("Origin", "https://evil.example"))
+                .andExpect(status().isForbidden());
+
+        jdbc.update("UPDATE member SET role='ADMIN' WHERE member_id=?", id(account.member()));
+        mvc.perform(get(path).header("Authorization", auth)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.meta.requestId").isString());
+        var claims = org.springframework.security.oauth2.jwt.JwtClaimsSet.builder().issuer("nospo")
+                .subject(account.member().toString()).claim("sid", account.session().toString())
+                .issuedAt(clock.instant().minusSeconds(300)).expiresAt(clock.instant().minusSeconds(120)).build();
+        var header = org.springframework.security.oauth2.jwt.JwsHeader
+                .with(org.springframework.security.oauth2.jose.jws.MacAlgorithm.HS256).build();
+        String expired = encoder.encode(org.springframework.security.oauth2.jwt.JwtEncoderParameters
+                .from(header, claims)).getTokenValue();
+        mvc.perform(get(path).header("Authorization", "Bearer " + expired)).andExpect(status().isUnauthorized());
+
+        reconsentRevision("SERVICE", "2", true);
+        mvc.perform(get(path).header("Authorization", auth)).andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("TERMS_RECONSENT_REQUIRED"));
+        mvc.perform(get("/api/v1/notices").header("Authorization", auth)).andExpect(status().isOk());
+        jdbc.update("UPDATE member SET role='USER' WHERE member_id=?", id(account.member()));
+        mvc.perform(get(path).header("Authorization", auth)).andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("FORBIDDEN"));
+        jdbc.update("UPDATE member SET role='ADMIN' WHERE member_id=?", id(account.member()));
+        jdbc.update("UPDATE auth_session SET revoked_at=? WHERE session_id=?", at(clock.instant()), id(account.session()));
+        mvc.perform(get(path).header("Authorization", auth)).andExpect(status().isUnauthorized());
+    }
+
+    @Test void accessGateAdminNoticeReadsDraftsAndUsesIndependentCursor() throws Exception {
+        var account = emailAccount("notice-editor@example.com", "notice_editor");
+        jdbc.update("UPDATE member SET role='ADMIN' WHERE member_id=?", id(account.member()));
+        String path = "/api/v1/admin/notices";
+        String auth = bearer(account);
+        var now = clock.instant();
+        var ids = List.of(new UUID(Long.MIN_VALUE, 0), new UUID(1, 0), new UUID(0, 0));
+        try {
+            for (int i = 0; i < ids.size(); i++) {
+                boolean published = i != 0;
+                var createdAt = i == 2 ? now.minusSeconds(1) : now;
+                jdbc.update("""
+                        INSERT INTO notice(notice_id,title,summary,content,pinned,published,published_at,created_at,updated_at)
+                        VALUES (?, 'notice fixture', '', '**body**', ?, ?, ?, ?, ?)
+                        """, id(ids.get(i)), i == 2, published, published ? PublicNoticeTests.utc(now) : null,
+                        PublicNoticeTests.utc(createdAt), PublicNoticeTests.utc(now));
+            }
+            var first = mvc.perform(get(path).param("limit", "1").header("Authorization", auth))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.items[0].noticeId").value(ids.getFirst().toString()))
+                    .andExpect(jsonPath("$.data.items[0].published").value(false))
+                    .andExpect(jsonPath("$.data.items[0].publishedAt").value(org.hamcrest.Matchers.nullValue()))
+                    .andExpect(jsonPath("$.data.items[0].content").value("**body**"))
+                    .andExpect(jsonPath("$.data.items[0].createdAt").doesNotHaveJsonPath())
+                    .andExpect(jsonPath("$.data.hasNext").value(true)).andReturn();
+            String cursor = mapper.readTree(first.getResponse().getContentAsString())
+                    .path("data").path("nextCursor").asString();
+            mvc.perform(get(path).param("limit", "2").param("cursor", cursor).header("Authorization", auth))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.items[0].noticeId").value(ids.get(1).toString()))
+                    .andExpect(jsonPath("$.data.items[1].noticeId").value(ids.getLast().toString()))
+                    .andExpect(jsonPath("$.data.hasNext").value(false))
+                    .andExpect(jsonPath("$.data.nextCursor").value(org.hamcrest.Matchers.nullValue()));
+            var publicPage = mvc.perform(get("/api/v1/notices").param("limit", "1"))
+                    .andExpect(status().isOk()).andReturn();
+            String publicCursor = mapper.readTree(publicPage.getResponse().getContentAsString())
+                    .path("data").path("nextCursor").asString();
+            assertThat(publicCursor).isNotBlank();
+            var oldestPage = mvc.perform(get(path).param("sort", "oldest").param("limit", "1")
+                            .header("Authorization", auth))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.items[0].noticeId").value(ids.getLast().toString())).andReturn();
+            String oldest = mapper.readTree(oldestPage.getResponse().getContentAsString())
+                    .path("data").path("nextCursor").asString();
+            mvc.perform(get(path).param("sort", "oldest").param("cursor", oldest).param("limit", "2")
+                            .header("Authorization", auth))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.items[0].noticeId").value(ids.get(1).toString()))
+                    .andExpect(jsonPath("$.data.items[1].noticeId").value(ids.getFirst().toString()))
+                    .andExpect(jsonPath("$.data.hasNext").value(false));
+            mvc.perform(get(path).param("sort", "oldest").param("cursor", cursor).header("Authorization", auth))
+                    .andExpect(status().isBadRequest()).andExpect(jsonPath("$.error.code").value("INVALID_CURSOR"));
+            for (String invalid : List.of("", "bad", cursor + "=", publicCursor, oldest)) {
+                mvc.perform(get(path).param("cursor", invalid).header("Authorization", auth))
+                        .andExpect(status().isBadRequest()).andExpect(jsonPath("$.error.code").value("INVALID_CURSOR"));
+            }
+            mvc.perform(get(path + "/{id}", ids.getFirst()).header("Authorization", auth))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.data.content").value("**body**"));
+            mvc.perform(get("/api/v1/notices/{id}", ids.getFirst())).andExpect(status().isNotFound());
+            mvc.perform(get(path + "/{id}", UUID.randomUUID()).header("Authorization", auth))
+                    .andExpect(status().isNotFound()).andExpect(jsonPath("$.error.code").value("RESOURCE_NOT_FOUND"));
+            mvc.perform(get(path + "/1-2-3-4-5").header("Authorization", auth))
+                    .andExpect(status().isBadRequest()).andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
+            mvc.perform(get(path).param("limit", "101").header("Authorization", auth))
+                    .andExpect(status().isUnprocessableContent())
+                    .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
+            mvc.perform(get(path).param("limit", "1.5").header("Authorization", auth))
+                    .andExpect(status().isBadRequest()).andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
+        } finally {
+            for (UUID notice : ids) jdbc.update("DELETE FROM notice WHERE notice_id=?", id(notice));
+        }
+    }
+
+    @Test void accessGateAllowsPublicNoticesButStillBlocksGeneralApi() throws Exception {
+        var account = emailAccount("notice-reader@example.com", "notice_reader");
+        UUID notice = UUID.randomUUID();
+        jdbc.update("""
+                INSERT INTO notice(notice_id,title,summary,content,published,published_at,created_at,updated_at)
+                VALUES (?, 'notice', '', 'body', TRUE, ?, ?, ?)
+                """, id(notice), PublicNoticeTests.utc(clock.instant()),
+                PublicNoticeTests.utc(clock.instant()), PublicNoticeTests.utc(clock.instant()));
+        try {
+            String list = "/api/v1/notices";
+            String detail = list + "/" + notice;
+            var ownHistory = mvc.perform(get("/api/v1/me/consents").param("limit", "1")
+                    .header("Authorization", bearer(account))).andExpect(status().isOk()).andReturn();
+            String foreignCursor = mapper.readTree(ownHistory.getResponse().getContentAsString())
+                    .path("data").path("nextCursor").asString();
+            assertThat(foreignCursor).isNotBlank();
+            mvc.perform(get(list).param("cursor", foreignCursor)).andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error.code").value("INVALID_CURSOR"));
+            for (String path : List.of(list, detail)) {
+                mvc.perform(get(path).header("Authorization", bearer(account))).andExpect(status().isOk());
+            }
+            reconsentRevision("SERVICE", "2", true);
+            for (String path : List.of(list, detail)) {
+                mvc.perform(get(path).header("Authorization", bearer(account))).andExpect(status().isOk());
+            }
+            updateNickname(bearer(account)).andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.error.code").value("TERMS_RECONSENT_REQUIRED"));
+        } finally {
+            jdbc.update("DELETE FROM notice WHERE notice_id=?", id(notice));
+        }
+    }
+
     @Test void accessGateUsesCurrentTermsWithTheSameTokenAcrossEffectiveTimeAndSubmission() throws Exception {
         var account=emailAccount("gateboundary@example.com","gateboundary");
         var effective=clock.instant().plusSeconds(1);

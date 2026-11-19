@@ -1,0 +1,215 @@
+{
+  "$schema": "https://raw.githubusercontent.com/dineug/erd-editor/main/json-schema/schema.json",
+  "version": "3.0.0",
+  "settings": {
+    "originX": 25,
+    "originY": 25,
+    "zoomLevel": 0.75,
+    "show": 2023,
+    "database": 4,
+    "databaseName": "NOSPO Notice",
+    "canvasType": "ERD",
+    "language": 32,
+    "tableNameCase": 8,
+    "columnNameCase": 8,
+    "bracketType": 8,
+    "relationshipDataTypeSync": true,
+    "columnOrder": [
+      1,
+      2,
+      4,
+      8,
+      16,
+      32,
+      64
+    ],
+    "maxWidthComment": 160,
+    "lockSettings": 63
+  },
+  "doc": {
+    "tableIds": [
+      "t_notice"
+    ],
+    "relationshipIds": [],
+    "indexIds": [
+      "ix_notice_public_order"
+    ],
+    "memoIds": [
+      "m_notice"
+    ],
+    "tableGroupIds": []
+  },
+  "collections": {
+    "tableEntities": {
+      "t_notice": {
+        "id": "t_notice",
+        "name": "notice",
+        "comment": "공개 조회와 관리자 공지가 공유하는 공지 원본",
+        "columnIds": [
+          "t_notice__notice_id",
+          "t_notice__title",
+          "t_notice__summary",
+          "t_notice__content",
+          "t_notice__pinned",
+          "t_notice__published",
+          "t_notice__published_at",
+          "t_notice__created_at",
+          "t_notice__updated_at",
+          "t_notice__deleted_at"
+        ],
+        "ui": {
+          "x": 80,
+          "y": 240,
+          "color": "#2563eb"
+        }
+      }
+    },
+    "tableColumnEntities": {
+      "t_notice__notice_id": {
+        "id": "t_notice__notice_id",
+        "tableId": "t_notice",
+        "name": "notice_id",
+        "comment": "공지 UUID와 기본 키",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 10
+      },
+      "t_notice__title": {
+        "id": "t_notice__title",
+        "tableId": "t_notice",
+        "name": "title",
+        "comment": "제목 1~200자",
+        "dataType": "VARCHAR(200)",
+        "default": "",
+        "options": 8
+      },
+      "t_notice__summary": {
+        "id": "t_notice__summary",
+        "tableId": "t_notice",
+        "name": "summary",
+        "comment": "요약 0~500자. 빈 문자열 허용",
+        "dataType": "VARCHAR(500)",
+        "default": "",
+        "options": 8
+      },
+      "t_notice__content": {
+        "id": "t_notice__content",
+        "tableId": "t_notice",
+        "name": "content",
+        "comment": "Markdown 본문 1~50000자",
+        "dataType": "MEDIUMTEXT",
+        "default": "",
+        "options": 8
+      },
+      "t_notice__pinned": {
+        "id": "t_notice__pinned",
+        "tableId": "t_notice",
+        "name": "pinned",
+        "comment": "목록 상단 고정 여부",
+        "dataType": "BOOLEAN",
+        "default": "FALSE",
+        "options": 8
+      },
+      "t_notice__published": {
+        "id": "t_notice__published",
+        "tableId": "t_notice",
+        "name": "published",
+        "comment": "현재 게시 여부",
+        "dataType": "BOOLEAN",
+        "default": "FALSE",
+        "options": 8
+      },
+      "t_notice__published_at": {
+        "id": "t_notice__published_at",
+        "tableId": "t_notice",
+        "name": "published_at",
+        "comment": "최초 게시 시각. 게시 전에는 NULL",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 0
+      },
+      "t_notice__created_at": {
+        "id": "t_notice__created_at",
+        "tableId": "t_notice",
+        "name": "created_at",
+        "comment": "서버에서 저장하는 UTC 생성 시각",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 8
+      },
+      "t_notice__updated_at": {
+        "id": "t_notice__updated_at",
+        "tableId": "t_notice",
+        "name": "updated_at",
+        "comment": "서버에서 저장하는 UTC 수정 시각",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 8
+      },
+      "t_notice__deleted_at": {
+        "id": "t_notice__deleted_at",
+        "tableId": "t_notice",
+        "name": "deleted_at",
+        "comment": "논리 삭제 UTC 시각. NULL이면 정상 공지",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 0
+      }
+    },
+    "relationshipEntities": {},
+    "indexEntities": {
+      "ix_notice_public_order": {
+        "id": "ix_notice_public_order",
+        "name": "ix_notice_public_order",
+        "tableId": "t_notice",
+        "indexColumnIds": [
+          "ix_notice_public_order__published",
+          "ix_notice_public_order__pinned",
+          "ix_notice_public_order__published_at",
+          "ix_notice_public_order__notice_id"
+        ],
+        "unique": false
+      }
+    },
+    "indexColumnEntities": {
+      "ix_notice_public_order__published": {
+        "id": "ix_notice_public_order__published",
+        "indexId": "ix_notice_public_order",
+        "columnId": "t_notice__published",
+        "orderType": 1
+      },
+      "ix_notice_public_order__pinned": {
+        "id": "ix_notice_public_order__pinned",
+        "indexId": "ix_notice_public_order",
+        "columnId": "t_notice__pinned",
+        "orderType": 2
+      },
+      "ix_notice_public_order__published_at": {
+        "id": "ix_notice_public_order__published_at",
+        "indexId": "ix_notice_public_order",
+        "columnId": "t_notice__published_at",
+        "orderType": 2
+      },
+      "ix_notice_public_order__notice_id": {
+        "id": "ix_notice_public_order__notice_id",
+        "indexId": "ix_notice_public_order",
+        "columnId": "t_notice__notice_id",
+        "orderType": 2
+      }
+    },
+    "memoEntities": {
+      "m_notice": {
+        "id": "m_notice",
+        "value": "NOSPO 공지사항 · API v2.1 · MySQL\n게시 중에는 최초 게시 시각이 필수이며 게시 취소 후에도 유지된다.\nCHECK 제약은 제목·요약·본문 길이와 두 불리언 컬럼을 검사한다.\n공개 목록은 게시 여부를 먼저 거르고 고정·게시 시각·UUID 내림차순으로 정렬한다.",
+        "ui": {
+          "x": 80,
+          "y": 40,
+          "width": 720,
+          "height": 165,
+          "color": "#1e40af"
+        }
+      }
+    },
+    "tableGroupEntities": {}
+  }
+}

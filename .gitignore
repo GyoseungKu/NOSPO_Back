@@ -4,3 +4,4 @@
 build/
 env.properties
 /env.properties
+.env

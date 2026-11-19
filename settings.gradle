@@ -78,3 +78,11 @@ project(':member:adapter-integration').projectDir = file('modules/member/adapter
 
 include ':account-lifecycle:adapter-worker'
 project(':account-lifecycle:adapter-worker').projectDir = file('modules/account-lifecycle/adapter-worker')
+
+include ':notice'
+project(':notice').projectDir = file('modules/notice')
+
+['contract', 'application', 'adapter-persistence', 'adapter-web'].each { name ->
+    include ":notice:${name}"
+    project(":notice:${name}").projectDir = file("modules/notice/${name}")
+}
