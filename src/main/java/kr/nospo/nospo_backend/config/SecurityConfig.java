@@ -4,16 +4,15 @@ import jakarta.servlet.*;
 import jakarta.servlet.http.*;
 
 import kr.nospo.identity.application.KakaoLinkAccess;
+import kr.nospo.member.contract.MemberAccess;
 import kr.nospo.notice.web.AdminNoticeImageController;
 import kr.nospo.support.ApiErrors;
 import kr.nospo.support.ApiException;
-import kr.nospo.support.SqlIds;
 import kr.nospo.terms.contract.MemberConsents;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.*;
 import org.springframework.http.HttpMethod;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authorization.AuthorizationDecision;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -51,7 +50,10 @@ public class SecurityConfig {
             PATHS.matcher("/api/v1/admin/notices"),
             PATHS.matcher("/api/v1/admin/notices/{noticeId}")
     };
+    private static final RequestMatcher ADMIN_AI =
+            PATHS.matcher("/api/v1/admin/members/{memberId}/ai/**");
     private static final RequestMatcher[] PUBLIC_REQUESTS = {
+            PATHS.matcher(HttpMethod.GET, "/api/v1/ai/credit-policy"),
             PATHS.matcher(HttpMethod.GET, "/api/v1/notices"),
             PATHS.matcher(HttpMethod.GET, "/api/v1/notices/{noticeId}"),
             PATHS.matcher(HttpMethod.GET, "/api/v1/terms"),
@@ -105,7 +107,7 @@ public class SecurityConfig {
             HttpSecurity http,
             ObjectMapper mapper,
             KakaoLinkAccess consentAccess,
-            JdbcTemplate db,
+            MemberAccess members,
             @Value("${nospo.auth.allowed-origins}") List<String> allowedOrigins)
             throws Exception {
         if (allowedOrigins.isEmpty() || allowedOrigins.contains("*"))
@@ -113,7 +115,7 @@ public class SecurityConfig {
         CorsConfiguration cors = new CorsConfiguration();
         cors.setAllowedOrigins(allowedOrigins);
         cors.setAllowedMethods(List.of("GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"));
-        cors.setAllowedHeaders(List.of("Content-Type", "Authorization", "Idempotency-Key"));
+        cors.setAllowedHeaders(List.of("Content-Type", "Authorization", "Idempotency-Key", "Last-Event-ID"));
         cors.setAllowCredentials(true);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         var noticeCors = new CorsConfiguration(cors);
@@ -141,6 +143,8 @@ public class SecurityConfig {
                         c ->
                                 c.ignoringRequestMatchers(NOTICE_IMAGE_UPLOAD)
                                         .ignoringRequestMatchers(
+                                        "/api/v1/ai/questions",
+                                        "/api/v1/admin/members/{memberId}/ai/credit-adjustments",
                                         "/api/v1/auth/recovery/complete",
                                         "/api/v1/auth/recovery/email-verifications",
                                         "/api/v1/auth/recovery/email-verifications/confirm",
@@ -168,10 +172,10 @@ public class SecurityConfig {
                                                 "/v3/api-docs.yaml")
                                         .permitAll()
                                         .requestMatchers(PUBLIC_REQUESTS).permitAll()
-                                        .requestMatchers(ADMIN_NOTICES)
+                                        .requestMatchers(request -> matches(ADMIN_NOTICES, request) || ADMIN_AI.matches(request))
                                         .access((authentication, context) -> new AuthorizationDecision(
                                                 authentication.get() instanceof JwtAuthenticationToken jwt
-                                                        && jwt.isAuthenticated() && activeAdmin(db, jwt)))
+                                                        && jwt.isAuthenticated() && activeAdmin(members, jwt)))
                                         .anyRequest()
                                         .authenticated())
                 .oauth2ResourceServer(
@@ -196,7 +200,7 @@ public class SecurityConfig {
                                         .accessDeniedHandler(
                                                 (r, s, x) ->
                                                         error(s, mapper, 403,
-                                                                matches(ADMIN_NOTICES, r)
+                                                                (matches(ADMIN_NOTICES, r) || ADMIN_AI.matches(r))
                                                                         ? "FORBIDDEN" : "ACCESS_DENIED")))
                 .addFilterBefore(
                         new OncePerRequestFilter() {
@@ -300,12 +304,9 @@ public class SecurityConfig {
         };
     }
 
-    private static boolean activeAdmin(JdbcTemplate db, JwtAuthenticationToken jwt) {
-        return db.query("""
-                SELECT role FROM member WHERE member_id = ? AND status = 'ACTIVE'
-                """, (row, index) -> row.getString("role"),
-                SqlIds.id(UUID.fromString(jwt.getToken().getSubject()))).stream()
-                .anyMatch("ADMIN"::equals);
+    private static boolean activeAdmin(MemberAccess members, JwtAuthenticationToken jwt) {
+        return members.state(UUID.fromString(jwt.getToken().getSubject()))
+                .filter(MemberAccess.State::administrator).isPresent();
     }
 
     private static boolean matches(RequestMatcher[] matchers, HttpServletRequest request) {

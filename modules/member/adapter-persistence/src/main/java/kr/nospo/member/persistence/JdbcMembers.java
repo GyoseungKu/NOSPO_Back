@@ -3,6 +3,7 @@ package kr.nospo.member.persistence;
 import static kr.nospo.support.SqlIds.*;
 
 import kr.nospo.member.application.MemberStore;
+import kr.nospo.member.contract.MemberAccess;
 import kr.nospo.member.contract.Members.Profile;
 import kr.nospo.support.ApiException;
 
@@ -14,7 +15,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Repository
-public class JdbcMembers implements MemberStore {
+public class JdbcMembers implements MemberStore, MemberAccess {
     private final JdbcTemplate jdbc;
 
     public JdbcMembers(JdbcTemplate jdbc) {
@@ -76,5 +77,21 @@ public class JdbcMembers implements MemberStore {
                 (rs, n) -> rs.getString(1), id(member));
         if (states.size() != 1 || !"ACTIVE".equals(states.get(0)))
             throw new ApiException(401, "INVALID_CREDENTIALS");
+    }
+
+    @Override
+    public java.util.Optional<State> state(UUID memberId) {
+        return state(memberId, false);
+    }
+
+    @Override
+    public java.util.Optional<State> lockState(UUID memberId) {
+        return state(memberId, true);
+    }
+
+    private java.util.Optional<State> state(UUID memberId, boolean lock) {
+        return jdbc.query("SELECT status,role,withdrawal_generation FROM member WHERE member_id=?"
+                        + (lock ? " FOR UPDATE" : ""),
+                (r, n) -> new State(r.getString(1), r.getString(2), r.getLong(3)), id(memberId)).stream().findFirst();
     }
 }
