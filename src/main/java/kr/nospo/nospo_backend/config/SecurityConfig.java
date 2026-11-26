@@ -52,6 +52,9 @@ public class SecurityConfig {
             PATHS.matcher("/api/v1/admin/notices/{noticeId}")
     };
     private static final RequestMatcher[] PUBLIC_REQUESTS = {
+            PATHS.matcher(HttpMethod.GET, "/api/v1/books/search"),
+            PATHS.matcher(HttpMethod.GET, "/api/v1/books/{bookId}"),
+            PATHS.matcher(HttpMethod.GET, "/api/v1/books/{bookId}/structure"),
             PATHS.matcher(HttpMethod.GET, "/api/v1/notices"),
             PATHS.matcher(HttpMethod.GET, "/api/v1/notices/{noticeId}"),
             PATHS.matcher(HttpMethod.GET, "/api/v1/terms"),

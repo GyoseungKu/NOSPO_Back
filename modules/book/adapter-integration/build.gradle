@@ -1,0 +1,7 @@
+plugins { id 'java-library' }
+dependencies {
+    implementation project(':book:application')
+    implementation 'tools.jackson.core:jackson-databind'
+    implementation 'org.springframework:spring-context'
+    implementation 'org.slf4j:slf4j-api'
+}
