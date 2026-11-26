@@ -140,7 +140,7 @@ public class AiQuestions {
         }
         else if (!current.deadline().isAfter(now)) error = "JOB_TIMEOUT";
         if (error == null && (!"RUNNING".equals(current.status()) || answer == null)) return;
-        credits.settle(current.member(), current.job(), error == null);
+        credits.settle(current.member(), current.job(), error == null, "AI_QUESTION");
         store.finish(current, now, error == null ? answer : null, error == null ? citations : null, error);
     }
 
@@ -227,16 +227,16 @@ public class AiQuestions {
         return json.writeValueAsString(citations);
     }
 
-    private Position current(UUID member, UUID book) {
+    Position current(UUID member, UUID book) {
         if (!books.ready()) throw new ApiException(503, "AI_UNAVAILABLE");
         return books.currentPosition(member, book).orElseThrow(() -> new ApiException(403, "SHELF_REQUIRED"));
     }
 
-    private void requireVisible(UUID member, UUID book, Position scope) {
+    void requireVisible(UUID member, UUID book, Position scope) {
         if (!inScope(scope, current(member, book))) throw new ApiException(403, "SPOILER_SCOPE_EXCEEDED");
     }
 
-    private static boolean inScope(Position scope, Position ceiling) {
+    static boolean inScope(Position scope, Position ceiling) {
         return scope.unit() == ceiling.unit() && scope.value() <= ceiling.value();
     }
 
@@ -244,11 +244,11 @@ public class AiQuestions {
         return member.active() && question.generation() == member.withdrawalGeneration();
     }
 
-    private static void validLimit(int limit) {
+    static void validLimit(int limit) {
         if (limit < 1 || limit > 100) throw new ApiException(422, "VALIDATION_ERROR");
     }
 
-    private static Cursor decode(String value) {
+    static Cursor decode(String value) {
         if (value == null) return null;
         try {
             if (value.length() > 120) throw new IllegalArgumentException();
@@ -263,7 +263,7 @@ public class AiQuestions {
         }
     }
 
-    private static String encode(Instant time, UUID id) {
+    static String encode(Instant time, UUID id) {
         return Base64.getUrlEncoder().withoutPadding()
                 .encodeToString((time + "," + id).getBytes(StandardCharsets.UTF_8));
     }

@@ -5,6 +5,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import kr.nospo.ai.application.AiQuestions;
+import kr.nospo.ai.application.AiGraphs;
 import kr.nospo.support.ApiException;
 import kr.nospo.support.ApiResponse;
 import org.springframework.http.HttpStatus;
@@ -29,11 +30,13 @@ import static kr.nospo.ai.application.AiQuestionStore.*;
 @SecurityRequirement(name = "bearerAuth")
 public class AiQuestionController {
     private final AiQuestions questions;
+    private final AiGraphs graphs;
     private final AiQuestionStreams streams;
     private final ObjectMapper json;
 
-    AiQuestionController(AiQuestions questions, AiQuestionStreams streams, ObjectMapper json) {
+    AiQuestionController(AiQuestions questions, AiGraphs graphs, AiQuestionStreams streams, ObjectMapper json) {
         this.questions = questions;
+        this.graphs = graphs;
         this.streams = streams;
         this.json = json;
     }
@@ -77,8 +80,17 @@ public class AiQuestionController {
     }
 
     @GetMapping("/ai/jobs/{jobId}")
-    @Operation(summary = "AI 작업 상태 조회", description = "본인 질문의 처리 상태와 차감 여부를 조회합니다.")
+    @Operation(summary = "AI 작업 상태 조회", description = "본인 질문 또는 관계도의 처리 상태와 차감 여부를 조회합니다.")
     public ApiResponse<Job> job(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID jobId) {
+        var graph = graphs.job(member(jwt), jobId);
+        if (graph.isPresent()) {
+            var g = graph.get();
+            boolean success = "SUCCEEDED".equals(g.status());
+            return ApiResponse.of(new Job(g.job(), "GRAPH", g.status(), g.created(), g.completed(),
+                    success ? Map.of("graphId", g.id()) : null,
+                    g.error() == null ? null : new Failure(g.error(), "관계도를 완료하지 못했습니다."),
+                    "QUEUED".equals(g.status()) ? 1 : 0, success ? 1 : 0, g.position(), g.version()));
+        }
         var q = questions.visibleQuestion(member(jwt), jobId, true);
         int charged = charged(q);
         return ApiResponse.of(new Job(q.job(), "QUESTION", q.status(), q.created(), q.completed(),

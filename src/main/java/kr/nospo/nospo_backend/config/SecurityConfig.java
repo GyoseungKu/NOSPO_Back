@@ -50,8 +50,10 @@ public class SecurityConfig {
             PATHS.matcher("/api/v1/admin/notices"),
             PATHS.matcher("/api/v1/admin/notices/{noticeId}")
     };
-    private static final RequestMatcher ADMIN_AI =
-            PATHS.matcher("/api/v1/admin/members/{memberId}/ai/**");
+    private static final RequestMatcher[] ADMIN_AI = {
+            PATHS.matcher("/api/v1/admin/members/{memberId}/ai/**"),
+            PATHS.matcher("/api/v1/admin/ai/credit-transactions/{transactionId}/refund")
+    };
     private static final RequestMatcher[] PUBLIC_REQUESTS = {
             PATHS.matcher(HttpMethod.GET, "/api/v1/ai/credit-policy"),
             PATHS.matcher(HttpMethod.GET, "/api/v1/notices"),
@@ -144,6 +146,8 @@ public class SecurityConfig {
                                 c.ignoringRequestMatchers(NOTICE_IMAGE_UPLOAD)
                                         .ignoringRequestMatchers(
                                         "/api/v1/ai/questions",
+                                        "/api/v1/ai/graphs",
+                                        "/api/v1/admin/ai/credit-transactions/{transactionId}/refund",
                                         "/api/v1/admin/members/{memberId}/ai/credit-adjustments",
                                         "/api/v1/auth/recovery/complete",
                                         "/api/v1/auth/recovery/email-verifications",
@@ -172,7 +176,7 @@ public class SecurityConfig {
                                                 "/v3/api-docs.yaml")
                                         .permitAll()
                                         .requestMatchers(PUBLIC_REQUESTS).permitAll()
-                                        .requestMatchers(request -> matches(ADMIN_NOTICES, request) || ADMIN_AI.matches(request))
+                                        .requestMatchers(request -> matches(ADMIN_NOTICES, request) || matches(ADMIN_AI, request))
                                         .access((authentication, context) -> new AuthorizationDecision(
                                                 authentication.get() instanceof JwtAuthenticationToken jwt
                                                         && jwt.isAuthenticated() && activeAdmin(members, jwt)))
@@ -200,7 +204,7 @@ public class SecurityConfig {
                                         .accessDeniedHandler(
                                                 (r, s, x) ->
                                                         error(s, mapper, 403,
-                                                                (matches(ADMIN_NOTICES, r) || ADMIN_AI.matches(r))
+                                                                (matches(ADMIN_NOTICES, r) || matches(ADMIN_AI, r))
                                                                         ? "FORBIDDEN" : "ACCESS_DENIED")))
                 .addFilterBefore(
                         new OncePerRequestFilter() {

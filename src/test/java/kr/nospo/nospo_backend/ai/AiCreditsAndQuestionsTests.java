@@ -37,7 +37,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest(classes = NospoBackendApplication.class, properties = {
         "spring.datasource.url=jdbc:h2:mem:ai_questions;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
-        "nospo.ai.poll-ms=100"
+        "nospo.ai.poll-ms=100",
+        "nospo.auth.allowed-origins=https://app.example.test",
+        "nospo.auth.kakao.redirect-uri=https://api.example.test/api/v1/auth/kakao/callback",
+        "nospo.auth.kakao.frontend-callback=https://app.example.test/oauth/callback",
+        "nospo.auth.kakao.return-paths=/"
 })
 @AutoConfigureMockMvc
 @ActiveProfiles({"test", "ai-local"})
@@ -182,6 +186,86 @@ class AiCreditsAndQuestionsTests {
         assertThat(failed.path("chargedCredits").asInt()).isZero();
         mvc.perform(get(BALANCE).header(BEARER, reader.token())).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.available").value(5));
+    }
+
+    @Test
+    void graphRegenerationCreatesANewOwnedResultAndChargesOncePerKey() throws Exception {
+        var reader = member("USER");
+        var other = member("USER");
+        UUID key = UUID.randomUUID();
+        var input = Map.of("bookId", BOOK, "position", Map.of("unit", "EPISODE", "value", 10));
+        var accepted = graph(reader, key, input);
+        var finished = awaitStatus(reader, accepted, "SUCCEEDED");
+        assertThat(finished.path("type").asString()).isEqualTo("GRAPH");
+        assertThat(finished.path("chargedCredits").asInt()).isEqualTo(1);
+        assertThat(graph(reader, key, input).path("jobId")).isEqualTo(accepted.path("jobId"));
+        String graphId = finished.path("result").path("graphId").asString();
+        String resultPath = "/api/v1/ai/graphs/" + graphId;
+        mvc.perform(get(resultPath).header(BEARER, other.token())).andExpect(status().isNotFound());
+        mvc.perform(get(resultPath).header(BEARER, reader.token())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.nodes[0].name").value("하린"))
+                .andExpect(jsonPath("$.data.edges").isEmpty())
+                .andExpect(jsonPath("$.data.generatedPosition.value").value(10))
+                .andExpect(jsonPath("$.data.currentPosition.value").value(40))
+                .andExpect(jsonPath("$.data.regenerationRequired").value(true));
+
+        var regenerated = graph(reader, UUID.randomUUID(), Map.of("bookId", BOOK, "regenerateFromGraphId", graphId));
+        var second = awaitStatus(reader, regenerated, "SUCCEEDED");
+        assertThat(second.path("result").path("graphId").asString()).isNotEqualTo(graphId);
+        mvc.perform(get("/api/v1/ai/graphs/" + second.path("result").path("graphId").asString())
+                .header(BEARER, reader.token())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.nodes.length()").value(2))
+                .andExpect(jsonPath("$.data.edges[0].type").value("MENTOR"))
+                .andExpect(jsonPath("$.data.citations[0].sourcePosition.value").value(20));
+        mvc.perform(get(resultPath).header(BEARER, reader.token())).andExpect(status().isOk());
+        mvc.perform(get("/api/v1/me/ai/graphs").header(BEARER, reader.token()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.items.length()").value(2));
+        mvc.perform(get(BALANCE).header(BEARER, reader.token())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.balance").value(3)).andExpect(jsonPath("$.data.reserved").value(0));
+    }
+
+    @Test
+    void ledgerIncludesSignupAndAllowsOnlyOneRefundOfOwnedUsage() throws Exception {
+        var reader = member("USER");
+        var admin = member("ADMIN");
+        var accepted = graph(reader, UUID.randomUUID(), Map.of("bookId", BOOK));
+        awaitStatus(reader, accepted, "SUCCEEDED");
+
+        String ledger = "/api/v1/me/ai/credit-transactions";
+        var first = data(mvc.perform(get(ledger).param("limit", "1").header(BEARER, reader.token()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.items[0].type").value("USE")).andReturn());
+        String use = first.path("items").get(0).path("transactionId").asString();
+        mvc.perform(get(ledger).param("cursor", first.path("nextCursor").asString()).header(BEARER, reader.token()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.items[0].reason").value("SIGNUP"));
+        mvc.perform(get(ledger + "/" + use).header(BEARER, admin.token())).andExpect(status().isNotFound());
+        mvc.perform(get(ledger + "/" + use).header(BEARER, reader.token())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.jobId").value(accepted.path("jobId").asString()));
+
+        String refundPath = "/api/v1/admin/ai/credit-transactions/" + use + "/refund";
+        UUID key = UUID.randomUUID();
+        String reason = mapper.writeValueAsString(Map.of("reason", "Support refund"));
+        mvc.perform(post(refundPath).contentType("application/json").header(KEY, key)
+                .header(BEARER, reader.token()).content(reason)).andExpect(status().isForbidden());
+        var refunded = data(mvc.perform(post(refundPath).contentType("application/json").header(KEY, key)
+                .header(BEARER, admin.token()).content(reason)).andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.originalTransactionId").value(use)).andReturn());
+        var replay = data(mvc.perform(post(refundPath).contentType("application/json").header(KEY, key)
+                .header(BEARER, admin.token()).content(reason)).andExpect(status().isCreated()).andReturn());
+        assertThat(replay.path("transactionId")).isEqualTo(refunded.path("transactionId"));
+        mvc.perform(post(refundPath).contentType("application/json").header(KEY, UUID.randomUUID())
+                .header(BEARER, admin.token()).content(reason)).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("ALREADY_REFUNDED"));
+        mvc.perform(get("/api/v1/admin/members/" + reader.id() + "/ai/credit-transactions")
+                .param("type", "REFUND").header(BEARER, admin.token())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items.length()").value(1));
+        mvc.perform(get(BALANCE).header(BEARER, reader.token())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.balance").value(5));
+    }
+
+    private JsonNode graph(Member member, UUID key, Map<String, ?> input) throws Exception {
+        return data(mvc.perform(post("/api/v1/ai/graphs").contentType("application/json").header(KEY, key)
+                .header(BEARER, member.token()).content(mapper.writeValueAsString(input)))
+                .andExpect(status().isAccepted()).andReturn());
     }
 
     private JsonNode ask(Member member, UUID key, String question) throws Exception {

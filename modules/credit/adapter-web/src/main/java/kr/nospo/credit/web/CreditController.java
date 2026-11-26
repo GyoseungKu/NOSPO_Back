@@ -13,6 +13,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 import tools.jackson.databind.JsonNode;
 
+import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 
@@ -45,6 +46,41 @@ public class CreditController {
             security = @SecurityRequirement(name = "bearerAuth"))
     public ApiResponse<AiCredits.Balance> adminBalance(@PathVariable UUID memberId) {
         return ApiResponse.of(credits.balance(memberId));
+    }
+
+    @GetMapping("/me/ai/credit-transactions")
+    @SecurityRequirement(name = "bearerAuth")
+    public ApiResponse<AiCredits.Page> transactions(@AuthenticationPrincipal Jwt jwt,
+            @RequestParam(required = false) String type, @RequestParam(required = false) Instant from,
+            @RequestParam(required = false) Instant to, @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "20") int limit) {
+        return ApiResponse.of(credits.transactions(UUID.fromString(jwt.getSubject()), type, from, to, cursor, limit));
+    }
+
+    @GetMapping("/me/ai/credit-transactions/{transactionId}")
+    @SecurityRequirement(name = "bearerAuth")
+    public ApiResponse<AiCredits.Transaction> transaction(@AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID transactionId) {
+        return ApiResponse.of(credits.transaction(UUID.fromString(jwt.getSubject()), transactionId));
+    }
+
+    @GetMapping("/admin/members/{memberId}/ai/credit-transactions")
+    @SecurityRequirement(name = "bearerAuth")
+    public ApiResponse<AiCredits.Page> adminTransactions(@PathVariable UUID memberId,
+            @RequestParam(required = false) String type, @RequestParam(required = false) Instant from,
+            @RequestParam(required = false) Instant to, @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "20") int limit) {
+        return ApiResponse.of(credits.transactions(memberId, type, from, to, cursor, limit));
+    }
+
+    public record Refund(String reason) {}
+
+    @PostMapping("/admin/ai/credit-transactions/{transactionId}/refund")
+    @ResponseStatus(HttpStatus.CREATED)
+    @SecurityRequirement(name = "bearerAuth")
+    public ApiResponse<AiCredits.Transaction> refund(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID transactionId,
+            @RequestHeader("Idempotency-Key") UUID key, @RequestBody Refund refund) {
+        return ApiResponse.of(credits.refund(UUID.fromString(jwt.getSubject()), transactionId, key, refund.reason()));
     }
 
     public record Adjustment(String type, @Schema(implementation = Integer.class) JsonNode amount, String reason) {

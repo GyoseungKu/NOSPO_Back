@@ -19,6 +19,9 @@ class AiContextConfiguration {
     private static final UUID CHARACTER = UUID.fromString("00000000-0000-0000-0000-000000000102");
     private static final UUID ENTRY = UUID.fromString("00000000-0000-0000-0000-000000000103");
 
+    private static final UUID APPRENTICE = UUID.fromString("00000000-0000-0000-0000-000000000104");
+    private static final UUID RELATION = UUID.fromString("00000000-0000-0000-0000-000000000105");
+
     @Bean
     @Profile("ai-local")
     @Primary
@@ -35,12 +38,17 @@ class AiContextConfiguration {
             }
 
             public Optional<Snapshot> visibleSnapshot(UUID bookId, Position position) {
-                return book(bookId).map(ignored -> position.value() < 10
-                        ? new Snapshot(1, List.of(), List.of(), List.of())
-                        : new Snapshot(1,
-                                List.of(new Entity(CHARACTER, "CHARACTER", "하린", "별빛 도서관 사서", null)),
-                                List.of(new Entry(ENTRY, CHARACTER, "하린은 10화에서 별빛 도서관의 지도 보관소를 연다.",
-                                        new Position(Unit.EPISODE, 10))), List.of()));
+                return book(bookId).map(ignored -> {
+                    if (position.value() < 10) return new Snapshot(1, List.of(), List.of(), List.of());
+                    var librarian = new Entity(CHARACTER, "CHARACTER", "하린", "별빛 도서관 사서", null);
+                    var entry = new Entry(ENTRY, CHARACTER, "하린은 10화에서 별빛 도서관의 지도 보관소를 연다.",
+                            new Position(Unit.EPISODE, 10));
+                    if (position.value() < 20) return new Snapshot(1, List.of(librarian), List.of(entry), List.of());
+                    var apprentice = new Entity(APPRENTICE, "CHARACTER", "유나", "별빛 도서관 견습 사서", null);
+                    var relation = new Relation(RELATION, CHARACTER, APPRENTICE, "MENTOR",
+                            "하린은 유나에게 지도 보관소 관리법을 가르친다.", new Position(Unit.EPISODE, 20));
+                    return new Snapshot(1, List.of(librarian, apprentice), List.of(entry), List.of(relation));
+                });
             }
         };
     }
