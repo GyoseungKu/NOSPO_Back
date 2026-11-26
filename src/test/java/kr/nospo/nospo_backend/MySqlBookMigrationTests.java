@@ -23,7 +23,7 @@ class MySqlBookMigrationTests {
     @Container static final MySQLContainer MYSQL = new MySQLContainer("mysql:8.4.7");
 
     @Test
-    void upgradesVersionElevenAndMatchesBookErd() {
+    void upgradesVersionsElevenAndTwelveAndMatchesBookErd() {
         var source = new DriverManagerDataSource(MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword());
         assertThat(Flyway.configure().dataSource(source).target("11").load().migrate().migrationsExecuted)
                 .isEqualTo(11);
@@ -40,13 +40,23 @@ class MySqlBookMigrationTests {
                 """, id(notice));
 
         var flyway = Flyway.configure().dataSource(source).load();
+        var versionTwelve = Flyway.configure().dataSource(source).target("12").load();
+        assertThat(versionTwelve.migrate().migrationsExecuted).isEqualTo(1);
+        assertThat(versionTwelve.info().current().getVersion().getVersion()).isEqualTo("12");
+        UUID book = UUID.randomUUID();
+        db.update("""
+                INSERT INTO book_edition(book_id,book_type,title,source,source_item_id)
+                VALUES (?,'BOOK','previous edition','FIXTURE',?)
+                """, id(book), new byte[] {1});
         assertThat(flyway.migrate().migrationsExecuted).isEqualTo(1);
         flyway.validate();
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("12");
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("13");
         assertThat(db.queryForObject("SELECT nickname FROM member WHERE member_id=?", String.class, id(member)))
                 .isEqualTo("fixture");
         assertThat(db.queryForObject("SELECT title FROM notice WHERE notice_id=?", String.class, id(notice)))
                 .isEqualTo("previous");
+        assertThat(db.queryForObject("SELECT title FROM book_edition WHERE book_id=?", String.class, id(book)))
+                .isEqualTo("previous edition");
 
         JsonNode erd = new ObjectMapper().readTree(Path.of("erd/NOSPO_Book.erd.json").toFile());
         var collections = erd.path("collections");
@@ -99,22 +109,26 @@ class MySqlBookMigrationTests {
         for (var foreignKey : foreignKeys) {
             String name = foreignKey.path("id").asString();
             expectedNames.add(name);
-            var row = db.queryForMap("""
+            var keys = db.queryForList("""
                     SELECT k.TABLE_NAME,k.COLUMN_NAME,k.REFERENCED_TABLE_NAME,k.REFERENCED_COLUMN_NAME,r.DELETE_RULE
                     FROM information_schema.key_column_usage k JOIN information_schema.referential_constraints r
                     ON r.constraint_schema=k.constraint_schema AND r.constraint_name=k.constraint_name
-                    WHERE k.table_schema=DATABASE() AND k.constraint_name=?
+                    WHERE k.table_schema=DATABASE() AND k.constraint_name=? ORDER BY k.ordinal_position
                     """, name);
-            assertThat(row.get("TABLE_NAME")).isEqualTo(tables.path(foreignKey.path("end").path("tableId").asString())
-                    .path("name").asString());
-            assertThat(row.get("REFERENCED_TABLE_NAME")).isEqualTo(tables.path(foreignKey.path("start").path("tableId").asString())
-                    .path("name").asString());
-            assertThat(row.get("COLUMN_NAME")).isEqualTo(columns.path(foreignKey.path("end").path("columnIds")
-                    .get(0).asString()).path("name").asString());
-            assertThat(row.get("REFERENCED_COLUMN_NAME")).isEqualTo(columns.path(foreignKey.path("start").path("columnIds")
-                    .get(0).asString()).path("name").asString());
-            assertThat((String) row.get("DELETE_RULE")).isIn(foreignKey.path("onDelete").asInt() == 4
-                    ? List.of("CASCADE") : List.of("RESTRICT", "NO ACTION"));
+            assertThat(keys).hasSize(foreignKey.path("end").path("columnIds").size());
+            for (int i = 0; i < keys.size(); i++) {
+                var row = keys.get(i);
+                assertThat(row.get("TABLE_NAME")).isEqualTo(tables.path(foreignKey.path("end").path("tableId").asString())
+                        .path("name").asString());
+                assertThat(row.get("REFERENCED_TABLE_NAME")).isEqualTo(tables.path(foreignKey.path("start").path("tableId").asString())
+                        .path("name").asString());
+                assertThat(row.get("COLUMN_NAME")).isEqualTo(columns.path(foreignKey.path("end").path("columnIds")
+                        .get(i).asString()).path("name").asString());
+                assertThat(row.get("REFERENCED_COLUMN_NAME")).isEqualTo(columns.path(foreignKey.path("start").path("columnIds")
+                        .get(i).asString()).path("name").asString());
+                assertThat((String) row.get("DELETE_RULE")).isIn(foreignKey.path("onDelete").asInt() == 4
+                        ? List.of("CASCADE") : List.of("RESTRICT", "NO ACTION"));
+            }
         }
         assertThat(db.queryForList("""
                 SELECT constraint_name FROM information_schema.table_constraints WHERE table_schema=DATABASE()
@@ -124,6 +138,20 @@ class MySqlBookMigrationTests {
                 SELECT constraint_name FROM information_schema.table_constraints WHERE table_schema=DATABASE()
                 AND table_name LIKE 'book%' AND constraint_type='CHECK'
                 """, String.class)).containsExactlyInAnyOrder("ck_book_edition_type", "ck_book_edition_total",
-                    "ck_book_episode_sequence", "ck_book_search_history_type");
+                    "ck_book_episode_sequence", "ck_book_search_history_type", "ck_book_progress_values",
+                    "ck_book_progress_revision", "ck_book_record_values");
+
+        String shelf = "INSERT INTO book_shelf(member_id,book_id,added_at) VALUES (?,?,CURRENT_TIMESTAMP(6))";
+        assertThatThrownBy(() -> db.update(shelf, id(member), id(book)))
+                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+        String progress = """
+                INSERT INTO book_progress(member_id,book_id,current_value,highest_value,revision) VALUES (?,?,?,?,0)
+                """;
+        assertThatThrownBy(() -> db.update(progress, id(member), id(book), 2, 1))
+                .hasStackTraceContaining("ck_book_progress_values");
+        db.update(progress, id(member), id(book), 1, 2);
+        db.update(shelf, id(member), id(book));
+        assertThatThrownBy(() -> db.update(shelf, id(member), id(book)))
+                .isInstanceOf(org.springframework.dao.DuplicateKeyException.class);
     }
 }

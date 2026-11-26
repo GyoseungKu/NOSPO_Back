@@ -39,6 +39,19 @@ public class JdbcBookStore implements BookStore {
     }
 
     @Override
+    public List<Book> findAll(List<UUID> bookIds) {
+        if (bookIds.isEmpty()) return List.of();
+        return withAuthors(named.query("SELECT * FROM book_edition WHERE book_id IN (:ids)",
+                Map.of("ids", bookIds.stream().map(bookId -> id(bookId)).toList()), this::book));
+    }
+
+    @Override
+    public Optional<Book> findBySource(String source, String sourceItemId) {
+        return withAuthors(db.query("SELECT * FROM book_edition WHERE source=? AND source_item_id=?",
+                this::book, source, sourceItemId.getBytes(UTF_8))).stream().findFirst();
+    }
+
+    @Override
     public UUID storeEdition(UUID workId, BookType type, String source, EditionMetadata metadata) {
         UUID candidate = UUID.randomUUID();
         byte[] item = metadata.sourceItemId().getBytes(UTF_8);

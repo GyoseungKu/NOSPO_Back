@@ -45,6 +45,36 @@ class MySqlPurgeTests extends RecoveryTests {
                 "email_delivery","idempotency_record","member_profile_image","member_consent","credit_wallet","credit_transaction","withdrawal_operation"))
             assertThat(owned(table,member)).as(table).isZero();
     }
+    @Test void finalPurgeCascadesShelfProgressAndRecordsButKeepsEdition() {
+        var account = emailAccount("shelf-purge@example.test", "shelf_purge");
+        UUID book = UUID.randomUUID();
+        byte[] memberId = id(account.member());
+        jdbc.update("""
+                INSERT INTO book_edition(book_id,book_type,title,source,source_item_id)
+                VALUES (?,'BOOK','Purge fixture','SHELF_PURGE_TEST',?)
+                """, id(book), id(book));
+        jdbc.update("""
+                INSERT INTO book_progress(member_id,book_id,current_value,highest_value,revision)
+                VALUES (?,?,12,12,1)
+                """, memberId, id(book));
+        jdbc.update("INSERT INTO book_shelf(member_id,book_id,added_at) VALUES (?,?,?)",
+                memberId, id(book), at(clock.instant()));
+        jdbc.update("""
+                INSERT INTO book_reading_record(record_id,member_id,book_id,from_value,to_value,added_units,recorded_at)
+                VALUES (?,?,?,10,12,2,?)
+                """, id(UUID.randomUUID()), memberId, id(book), at(clock.instant()));
+        withdraw(account);
+        for (String table : List.of("book_shelf", "book_progress", "book_reading_record")) {
+            assertThat(owned(table, account.member())).isOne();
+        }
+        clock.advance(30 * 86400);
+        assertThat(purger.processBatch()).isEqualTo(1);
+        for (String table : List.of("book_shelf", "book_progress", "book_reading_record")) {
+            assertThat(owned(table, account.member())).isZero();
+        }
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM book_edition WHERE book_id=?",
+                Integer.class, id(book))).isOne();
+    }
     @Test void purgeBoundaryAndOldCredentialsAreRejectedBeforeAndAfterDeletion() throws Exception {
         var a=emailAccount("purge@example.com","purge");withdraw(a);var c=candidate(a);
         clock.advance(30*86400-1);String proof=recoveryProof("purge@example.com");

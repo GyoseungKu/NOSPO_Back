@@ -104,3 +104,61 @@ ISBN10 및 978/979 ISBN13의 형식·체크디지트를 확인한다. 유효한 
 루프백 HTTP 20건, Book H2 9건, Book MySQL 9건을 포함해 선별 86건이 통과했다. 실패·오류·스킵은 각 0건이다. 자세한 결과와 파일 목록은 [Book 1.5단계 결과 보고서](Terms_Reconsent_Analysis.md)에 기록했다.
 
 공유 REST API 키 설정 수정 후 책 검색 22건과 기존 카카오 로그인 73건을 별도로 실행했다. 총 95건이 통과했고 실패·오류·스킵은 각 0건이다.
+
+## Book 2단계 — 개인 서재
+
+### API와 접근 제어
+
+| 메서드 | 경로 | 성공 응답 |
+| --- | --- | --- |
+| GET | `/api/v1/me/shelf` | 200 Page<ShelfItem> |
+| POST | `/api/v1/me/shelf` | 201 ShelfItem |
+| GET | `/api/v1/me/shelf/{bookId}` | 200 ShelfItem |
+| DELETE | `/api/v1/me/shelf/{bookId}` | 204 빈 본문 |
+
+등록 요청은 `{"bookId":"UUID","position":{"unit":"PAGE","value":20}}` 형식이다. 웹소설에는 EPISODE를 사용한다. 값은 0 이상의 정수이며 판본의 알려진 총량을 초과하면 422 INVALID_POSITION이다. 요청 소유자는 기존 JWT의 인증된 회원이다. 활성 세션·ACTIVE 상태·필수 약관 재동의·Origin 정책을 사용하고 기존 Spring Security 설정은 그대로 적용한다. 미등록·타인 소유·삭제 후 조회나 반복 삭제는 404 RESOURCE_NOT_FOUND, 중복 등록은 409 SHELF_ALREADY_EXISTS다. Swagger에 요청 예시, ShelfItem, Bearer와 응답 상태를 추가했다.
+
+### 저장과 재등록
+
+V13의 `book_shelf`는 활성 연결과 addedAt, `book_progress`는 현재 지점·최고 지점·마지막 진도 변경 시각·revision, `book_reading_record`는 현재 지점의 이동과 집계 증가분을 저장한다. 진행 및 활성 연결은 회원과 판본 복합 PK를 사용한다. 기록과 연결은 진도의 복합 FK를 참조하며 공용 판본의 수명은 회원과 독립적이다. UUID는 BINARY(16), 시각은 UTC DATETIME(6)이다.
+
+최초 등록은 current와 highest를 입력값으로 초기화하고 revision=0으로 시작한다. 독서 기록을 생성하지 않는다. 제거는 활성 연결 행을 삭제한다. 재등록은 addedAt을 다시 부여하고, 현재 지점은 요청값, 최고 지점은 기존 최고와 요청값 중 큰 값으로 저장한다. 실제 이동이 있으면 lastProgressAt을 갱신한다. 재등록 때 revision은 1 증가한다. 이전 최고를 초과할 때만 기존 current와 새 current 및 `새 current - 기존 최고`를 한 번 기록한다. 모든 쓰기는 기존 회원 행을 먼저 잠그고 활성 세션을 재확인한 뒤 READ COMMITTED 트랜잭션 한 건에서 실행한다.
+
+탈퇴 직후 기존 인증 정책이 접근을 차단한다. 사용자 요청에 따른 기존 30일 복구 정책으로 서재·진도·기록을 보존하고, 최종 파기의 회원 행 삭제가 연쇄 정리한다. 기존 Identity 파기 코드는 그대로 적용한다. 명세서 제1부의 즉시 삭제 문구와 현재 배포된 복구 정책은 차이가 있으며 이번 단계는 작업 지시의 30일 복구 정책을 적용했다.
+
+### 조회와 카카오 판본
+
+기본 RECENT_ACTIVITY는 lastProgressAt이 있으면 해당 값, 없으면 addedAt을 사용한 내림차순이다. RECENT_ADDED는 addedAt 내림차순이다. TITLE은 제목 UTF-8 바이트 기준 오름차순이며 대소문자와 언어별 조합을 구분한다. UUID는 주 정렬 방향과 같은 최종 비교 키다. 목록 조회는 키셋과 고정 횟수의 일괄 카탈로그 조회를 사용한다. 커서는 15분간 유효하고 회원·필터·정렬·limit에 결합한다. 페이지 간 목록 변경으로 순서가 이동할 수 있다. 웹소설의 현재 회차는 회차 메타데이터에서 조회하며, 0 또는 메타데이터가 없는 번호의 레이블은 null이다. 백분율은 현재 지점과 알려진 총량으로 계산하며 반올림은 소수 두 자리다. 총량 미상은 null, 총량이 0이면 0이다.
+
+등록은 먼저 영구 `BookCatalog`에서 판본을 확인한다. 캐시의 카카오 임시 ID는 `KAKAO_DAUM`과 검증된 ISBN 출처 키가 일치하고 같은 키의 BOOK 판본이 DB에 이미 있을 때 해당 영구 ID로만 연결한다. 임시 UUID를 FK에 쓰거나 카카오 응답을 영구 저장하는 흐름은 없다. 승인된 판본 부재, 캐시 만료 및 재시작으로 매핑할 수 없는 요청은 404다. 카카오 안내는 검색 결과의 영구 수집과 일부 사용자 선택 정보 저장을 구분한다. NOSPO의 허용 필드·보관·재표시 범위가 확정되기 전까지 신규 영구 승격은 보류한다. [카카오 운영정책](https://developers.kakao.com/terms/ko/site-policies) · [일시 캐시 안내](https://devtalk.kakao.com/t/api/151763) · [선택 정보 안내](https://devtalk.kakao.com/t/api/152911)
+
+### 다음 단계
+
+Book 3단계는 같은 회원 행 잠금 순서와 ShelfStore의 progress 및 record 연산을 재사용한다. 진도 수정에서는 활성 연결을 확인하고 revision의 ETag 비교와 갱신을 한 트랜잭션에 묶는다. 독서량은 기록의 added_units를 PAGE와 EPISODE로 나누며 UTC recorded_at을 Asia/Seoul 날짜 범위로 집계한다. 진도 수정·기록 조회·통계·홈 API는 후속 단계다. 기존 H2 Refresh·탈퇴 경합은 Known Issue로 추적한다. 검증 내역은 [Book 2단계 결과 보고서](Terms_Reconsent_Analysis.md)에 기록한다.
+
+최종 선별 테스트 178건이 통과했다. 실패·오류·스킵은 각각 0건이다. H2 서재 9건, MySQL 서재 9건, 증분 마이그레이션·ERD와 실제 파기 서비스 검증 각각 1건을 포함했다.
+
+## Book 2.5단계 — 카카오 선택 도서의 서재 등록
+
+`POST /api/v1/me/shelf`의 v2.1 요청·응답을 유지했다. `ShelfEditionRegistration`이 먼저 영구 `BookCatalog`를 조회하고, 없으면 유효한 임시 캐시를 조회한다. 카카오 출처, BOOK/PAGE, ISBN 체크디지트 및 ISBN13 출처 키 일치, 제목 존재를 확인한다. 승인 판본 조회는 V12의 `(source, source_item_id)`를 사용한다. 이미 저장된 ISBN과 유형 또는 출처가 충돌하면 404다. 동일 ISBN이라도 다른 제공자 레코드로 추정 연결하지 않는다. 카카오 응답에서 제목이 바뀌어도 기존 승인 DB 레코드가 우선한다.
+
+### 저장 정책 판단
+
+| 확인 상태 | 근거와 적용 범위 |
+| --- | --- |
+| 명시적으로 안내됨 | 사용자 검색 질의에 대한 응답 표시와 사용자 환경 개선을 위한 일시 캐시. 최신성을 유지해야 한다. [REST API](https://developers.kakao.com/docs/ko/daum-search/dev-guide#search-book) · [운영정책](https://developers.kakao.com/terms/ko/site-policies) · [카카오 답변](https://devtalk.kakao.com/t/api/151763) |
+| 조건부로 안내됨 | 사용자가 선택한 일부 정보를 서비스 기능에 사용하거나 저장하는 사례. 공용 레코드·개인 책장 유사 사례에서 재접근 시 갱신하는 캐시를 안내했고, 검색 대체와 카카오 데이터의 AI 질의 사용은 해당 답변의 허용 범위에서 제외했다. [선택 정보 답변](https://devtalk.kakao.com/t/api/152911) · [공용 레코드 사례 답변](https://devtalk.kakao.com/t/bookflow/152494) |
+| NOSPO 적용 미확정 | ISBN, 제목, 저자, 출판사, 표지 URL, 출간일, 출처별 장기 저장 범위와 여러 회원 공유·공개 상세 재표시·최종 사용 후 보존 기간. NOSPO의 현재 공용 영구 모델 전체에 대한 허용 근거는 확인하지 못했다. |
+| 금지 범위 | 검색 결과의 수집으로 자체 검색 DB를 구축하거나 검색 API를 대체·재판매하는 용도. [카카오 답변](https://devtalk.kakao.com/t/api/151763) · [공용 레코드 사례 답변](https://devtalk.kakao.com/t/bookflow/152494) |
+
+`KakaoShelfStoragePolicy`의 운영 코드는 신규 공유 판본 생성을 차단한다. 설정만으로 변경할 수 있는 활성화 스위치는 없다. 현재 운영에서 새로 저장하는 카카오 서지 필드는 없다. 테스트에서만 승인을 대체할 수 있으며, 검증용 최소 후보는 V12가 요구하는 제목과 판본 식별용 출처·ISBN13이다. 저자·출판사·출간일·표지 URL·소개·작품 관계·판본 레이블·전체 페이지는 이 경로에서 저장하지 않는다. 원본 JSON, 목록, 상품 HTML, 이미지 바이너리 및 자체 검색 인덱스는 저장 대상에서 제외했다.
+
+### 원자성과 연동
+
+회원 행 잠금과 세션 재확인 이후, 판본 확인·승인된 생성 경로·서재/진도 연결을 기존 READ COMMITTED 트랜잭션에서 처리한다. 생성 경로는 기존 JDBC upsert와 V12 유일 키로 경합 시 기존 UUID를 읽고, 오류 시 판본·서재·진도를 롤백한다. 카카오 HTTP 호출은 이 트랜잭션에 없다. 최초 등록 및 재등록의 독서량·최고 진도 정책과 최종 파기 관계는 이전 단계와 같다. V1~V13, ERD, BookCatalog 공개 계약을 유지했다.
+
+프론트는 임시 UUID를 검색 후 등록 요청에 사용하고, 201을 받으면 `data.book.bookId`로 교체한다. 이후 상세·삭제·향후 진도·위키·AI에는 영구 UUID를 사용한다. 임시 캐시는 5분, 최대 1,024개이며 인스턴스별이다. 만료·축출·재시작·다른 인스턴스 캐시 미존재 시 다시 검색한다. 카탈로그에 승인 판본이 없는 상황에서는 다시 검색해도 정책상 404가 유지된다. Swagger에 상태와 UUID 교체 규칙을 반영했다.
+
+Book 3단계는 이미 등록 가능한 영구 판본을 기준으로 진행할 수 있다. 신규 카카오 판본 활성화는 허용 필드, 갱신 및 보존 기간, 서재 밖 재표시·공유 제한을 확정한 뒤 별도 반영한다. 기존 H2 Refresh·탈퇴 잠금 경합은 Known Issue로 유지한다.
+
+선별 회귀 184건 통과, 실패·오류·스킵 각 0건이다. H2·MySQL 서재 테스트 각각 12건에서 운영 기본 차단, 신규 판본 후보의 테스트 승인·경합·롤백을 검증했다. 검증 내역은 [Book 2.5단계 결과 보고서](Terms_Reconsent_Analysis.md)에 기록했다.

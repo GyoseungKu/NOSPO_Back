@@ -11,6 +11,10 @@ import kr.nospo.book.contract.SearchType;
 public interface BookStore {
     Optional<Book> find(UUID bookId);
 
+    List<Book> findAll(List<UUID> bookIds);
+
+    Optional<Book> findBySource(String source, String sourceItemId);
+
     UUID storeEdition(UUID workId, BookType type, String source, EditionMetadata metadata);
 
     void storeWork(UUID workId);
