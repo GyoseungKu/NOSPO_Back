@@ -190,3 +190,119 @@ Wiki·AI 팀에는 `ReadingProgressCatalog.activeProgress(memberId, bookId)`를 
 Book 4단계는 동일 기록의 UTC 구간을 Asia/Seoul 날짜로 묶고 `added_units > 0`만 PAGE·EPISODE의 독서량과 activeDays에 반영한다. 홈·요약·캘린더 API와 이를 포함한 전체 회귀는 Book 4단계에서 2026-11-29까지 실행할 후속 범위다. 기존 H2 Refresh·탈퇴 잠금 경합은 Known Issue로 유지한다.
 
 최종 선별 회귀 200건이 통과했다. 실패·오류·스킵은 각 0건이다. H2와 MySQL 서재 스위트에서 각각 진도·기록 검증 6건을 추가했다. 실제 실행 범위 및 CORS 분리 재검증은 [Book 3단계 결과 보고서](Terms_Reconsent_Analysis.md)에 기록했다.
+
+## Book 4단계 — 홈·기간 독서량·월별 캘린더
+
+| 경로 | 입력 | 성공 data |
+| --- | --- | --- |
+| GET /api/v1/me/reading/current | 없음 | item: ShelfItem 또는 null |
+| GET /api/v1/me/reading/summary | from, to 필수 YYYY-MM-DD | from, to, timeZone, pages, episodes, activeDays, daily |
+| GET /api/v1/me/reading/calendar | month 필수 YYYY-MM | month, timeZone, days |
+
+세 조회는 기존 JWT·활성 세션·ACTIVE 회원·재동의 및 no-store 규칙을 적용한다. If-Match는 Book 3단계 진도 변경의 조건이다. Swagger에 요청 형식·권한·오류와 응답 구조를 추가했다.
+
+current는 회원 본인의 활성 링크에 한정한다. SQL 정렬은 `last_progress_at DESC`, 활동 시각이 null인 후보의 `added_at DESC`, `book_id DESC`다. 활동 판본이 하나라도 있으면 최근 등록만 한 책보다 우선한다. 실제 진도 변경이 없으면 최근 등록이 선택되며 같은 시각은 UUID로 결정한다. 동일 위치 재저장은 활동 시각에 영향을 주지 않는다. 제거하면 후보에서 빠진다. 같은 위치로 재등록한 판본은 기존 활동 시각을 보존하고, 이전 활동이 없는 판본은 새 등록 시각으로 비교한다. SQL에서 한 판본만 선택하고 기존 ShelfItem 계산을 재사용한다.
+
+summary와 calendar는 V13의 양수 added_units를 같은 일별 집계에서 계산한다. BOOK을 pages, WEB_NOVEL을 episodes로 합산하며 두 단위는 별도다. 활동을 나타내는 hasActivity는 둘 중 하나가 양수인 경우 true이고, activeDays는 그 날짜 수다. 최초 등록·재독·동일 위치 저장은 새 독서량을 추가하지 않는다. 재등록의 증가분은 저장된 기록에서 한 번 반영한다. 통계 SQL은 활성 서재에 조인하지 않으므로 제거 전 기록도 포함한다.
+
+Java의 Asia/Seoul 날짜 시작과 마지막 날짜 다음 날 시작을 UTC로 환산한다. SQL은 회원·UTC 범위를 V13 `ix_book_record_time`의 선두 키로 제한하고, 날짜별 SUM의 결과만 반환한다. 날짜 변환에는 Java ZoneRules가 제공한 명시적 오프셋을 사용한다. 과거 오프셋이 바뀌는 구간은 같은 읽기 트랜잭션에서 나누어 읽고 같은 날짜로 합친다. JVM이나 DB 세션 기본 시간대에는 의존하지 않는다. 오늘 쓰는 서울 오프셋 기간은 한 집계 쿼리로 처리하고, Java에서 빠진 날짜를 0으로 채워 오름차순으로 돌려준다. V13과 ERD를 유지했다.
+
+### 프론트 요청과 응답 예시
+
+세 경로 모두 `Authorization: Bearer <accessToken>`을 사용한다. 모든 예시는 HTTP 200의 `data/meta` 응답이다. 회원 미인증·비활성 세션은 401, 필수 약관 재동의는 403 `TERMS_RECONSENT_REQUIRED`다. 쿼리 누락이나 형식 오류는 400 `INVALID_REQUEST`, 잘못된 기간은 400 `VALIDATION_ERROR`다.
+
+```http
+GET /api/v1/me/reading/current
+Authorization: Bearer <accessToken>
+
+GET /api/v1/me/reading/summary?from=2026-11-01&to=2026-11-07
+Authorization: Bearer <accessToken>
+
+GET /api/v1/me/reading/calendar?month=2026-11
+Authorization: Bearer <accessToken>
+```
+
+빈 서재의 current 응답이다. 책이 있으면 item 자리에는 기존 ShelfItem 전체가 들어간다.
+
+```json
+{"data":{"item":null},"meta":{"requestId":"00000000-0000-0000-0000-000000000001"}}
+```
+
+진도를 변경한 일반 도서가 선택된 경우다. 현재 지점이 최고 지점보다 낮을 수 있다.
+
+```json
+{
+  "data":{"item":{
+    "book":{"bookId":"a01f1d26-5597-4ac4-889b-e60634a2ea34","workId":null,
+      "bookType":"BOOK","title":"예시 도서","authors":[],"publisher":null,
+      "editionLabel":null,"isbn":null,"coverUrl":null},
+    "currentPosition":{"unit":"PAGE","value":25},
+    "highestPosition":{"unit":"PAGE","value":40},
+    "positionContext":{"volumeLabel":null,"chapterLabel":null,"episodeLabel":null},
+    "progressPercent":25.00,"addedAt":"2026-11-01T00:00:00Z","lastProgressAt":"2026-11-01T01:00:00Z"
+  }},
+  "meta":{"requestId":"00000000-0000-0000-0000-000000000004"}
+}
+```
+
+11월 1일에만 15쪽과 2화를 새로 읽은 경우의 summary다.
+
+```json
+{
+  "data":{"from":"2026-11-01","to":"2026-11-07","timeZone":"Asia/Seoul",
+  "pages":15,"episodes":2,"activeDays":1,"daily":[
+    {"date":"2026-11-01","pages":15,"episodes":2,"hasActivity":true},
+    {"date":"2026-11-02","pages":0,"episodes":0,"hasActivity":false},
+    {"date":"2026-11-03","pages":0,"episodes":0,"hasActivity":false},
+    {"date":"2026-11-04","pages":0,"episodes":0,"hasActivity":false},
+    {"date":"2026-11-05","pages":0,"episodes":0,"hasActivity":false},
+    {"date":"2026-11-06","pages":0,"episodes":0,"hasActivity":false},
+    {"date":"2026-11-07","pages":0,"episodes":0,"hasActivity":false}
+  ]},
+  "meta":{"requestId":"00000000-0000-0000-0000-000000000002"}
+}
+```
+
+같은 기록을 사용하는 11월 calendar다. 집계가 없으면 모든 날짜를 위와 같은 0 형식으로 반환한다.
+
+```json
+{
+  "data":{"month":"2026-11","timeZone":"Asia/Seoul","days":[
+    {"date":"2026-11-01","pages":15,"episodes":2,"hasActivity":true},
+    {"date":"2026-11-02","pages":0,"episodes":0,"hasActivity":false},
+    {"date":"2026-11-03","pages":0,"episodes":0,"hasActivity":false},
+    {"date":"2026-11-04","pages":0,"episodes":0,"hasActivity":false},
+    {"date":"2026-11-05","pages":0,"episodes":0,"hasActivity":false},
+    {"date":"2026-11-06","pages":0,"episodes":0,"hasActivity":false},
+    {"date":"2026-11-07","pages":0,"episodes":0,"hasActivity":false},
+    {"date":"2026-11-08","pages":0,"episodes":0,"hasActivity":false},
+    {"date":"2026-11-09","pages":0,"episodes":0,"hasActivity":false},
+    {"date":"2026-11-10","pages":0,"episodes":0,"hasActivity":false},
+    {"date":"2026-11-11","pages":0,"episodes":0,"hasActivity":false},
+    {"date":"2026-11-12","pages":0,"episodes":0,"hasActivity":false},
+    {"date":"2026-11-13","pages":0,"episodes":0,"hasActivity":false},
+    {"date":"2026-11-14","pages":0,"episodes":0,"hasActivity":false},
+    {"date":"2026-11-15","pages":0,"episodes":0,"hasActivity":false},
+    {"date":"2026-11-16","pages":0,"episodes":0,"hasActivity":false},
+    {"date":"2026-11-17","pages":0,"episodes":0,"hasActivity":false},
+    {"date":"2026-11-18","pages":0,"episodes":0,"hasActivity":false},
+    {"date":"2026-11-19","pages":0,"episodes":0,"hasActivity":false},
+    {"date":"2026-11-20","pages":0,"episodes":0,"hasActivity":false},
+    {"date":"2026-11-21","pages":0,"episodes":0,"hasActivity":false},
+    {"date":"2026-11-22","pages":0,"episodes":0,"hasActivity":false},
+    {"date":"2026-11-23","pages":0,"episodes":0,"hasActivity":false},
+    {"date":"2026-11-24","pages":0,"episodes":0,"hasActivity":false},
+    {"date":"2026-11-25","pages":0,"episodes":0,"hasActivity":false},
+    {"date":"2026-11-26","pages":0,"episodes":0,"hasActivity":false},
+    {"date":"2026-11-27","pages":0,"episodes":0,"hasActivity":false},
+    {"date":"2026-11-28","pages":0,"episodes":0,"hasActivity":false},
+    {"date":"2026-11-29","pages":0,"episodes":0,"hasActivity":false},
+    {"date":"2026-11-30","pages":0,"episodes":0,"hasActivity":false}
+  ]},
+  "meta":{"requestId":"00000000-0000-0000-0000-000000000003"}
+}
+```
+
+카카오 신규 판본 저장 차단 및 Book 3 ETag/CORS를 유지했다. 실제 카카오 도서 API와 국립중앙도서관 API는 미검증 상태이며 국립중앙도서관 어댑터는 이번 작업에 포함하지 않았다. 기존 H2 Refresh·탈퇴 잠금 경합은 Known Issue로 남긴다.
+
+첫 Book 4 표적 테스트 8건과 선별 회귀 210건이 통과했다. 전체 프로젝트 Gradle 테스트는 1,500건 통과, 실패·오류·스킵 각 0건이었다. 전체 실행은 H2 658건, MySQL Testcontainers 784건, DB 없는 테스트 58건을 포함했다. 실제 DB 및 외부 서비스에는 접속하지 않았다. 세부 내역은 [Book 4단계 결과 보고서](Terms_Reconsent_Analysis.md)에 기록했다.

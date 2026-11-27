@@ -84,6 +84,11 @@ public class ShelfService implements ReadingProgressCatalog {
         return item(catalog.find(bookId).orElseThrow(ShelfService::notFound), row);
     }
 
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public Optional<ShelfItem> current(UUID owner) {
+        return shelf.current(owner).map(row -> item(catalog.find(row.bookId()).orElseThrow(), row));
+    }
+
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public ShelfItem add(UUID owner, UUID session, UUID requestedId, Position position) {
         lockOwner(owner, session);

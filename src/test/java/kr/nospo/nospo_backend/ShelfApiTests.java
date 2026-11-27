@@ -640,6 +640,185 @@ class ShelfApiTests {
     }
 
     @Test
+    void homeCurrentPrioritizesRealActivityAndUsesDeterministicFallback() throws Exception {
+        var owner = member(true);
+        var other = member(true);
+        UUID paper = edition("BOOK", "Current paper", 100);
+        UUID novel = edition("WEB_NOVEL", "Current novel", null);
+        db.update("""
+                INSERT INTO book_episode(episode_id,book_id,sequence_no,episode_label,volume_label,chapter_label)
+                VALUES (?,?,2,'2화','1권','첫 구간')
+                """, id(UUID.randomUUID()), id(novel));
+        mvc.perform(home(owner, "current")).andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.data.item").value(org.hamcrest.Matchers.nullValue()));
+        mvc.perform(add(owner, paper, "PAGE", 10)).andExpect(status().isCreated());
+        mvc.perform(home(owner, "current")).andExpect(jsonPath("$.data.item.book.bookId").value(paper.toString()))
+                .andExpect(jsonPath("$.data.item.lastProgressAt").value(org.hamcrest.Matchers.nullValue()));
+        mvc.perform(add(owner, novel, "EPISODE", 0)).andExpect(status().isCreated());
+        String tieWinner = paper.toString().compareTo(novel.toString()) > 0 ? paper.toString() : novel.toString();
+        mvc.perform(home(owner, "current")).andExpect(jsonPath("$.data.item.book.bookId").value(tieWinner));
+        time.now.updateAndGet(t -> t.plusSeconds(1));
+        String paperTag = etag(move(owner, paper, progressTag(owner, paper, 0), "PAGE", 30));
+        time.now.updateAndGet(t -> t.plusSeconds(1));
+        UUID newBook = edition("BOOK", "Newest unstarted", null);
+        mvc.perform(add(owner, newBook, "PAGE", 0)).andExpect(status().isCreated());
+        mvc.perform(add(other, novel, "EPISODE", 0)).andExpect(status().isCreated());
+        mvc.perform(home(owner, "current")).andExpect(jsonPath("$.data.item.book.bookId").value(paper.toString()))
+                .andExpect(jsonPath("$.data.item.currentPosition.value").value(30))
+                .andExpect(jsonPath("$.data.item.highestPosition.value").value(30));
+        time.now.updateAndGet(t -> t.plusSeconds(1));
+        move(owner, novel, progressTag(owner, novel, 0), "EPISODE", 2);
+        time.now.updateAndGet(t -> t.plusSeconds(1));
+        move(owner, paper, paperTag, "PAGE", 30).andExpect(header().string("ETag", paperTag));
+        mvc.perform(home(owner, "current")).andExpect(jsonPath("$.data.item.book.bookId").value(novel.toString()))
+                .andExpect(jsonPath("$.data.item.positionContext.episodeLabel").value("2화"))
+                .andExpect(jsonPath("$.data.item.progressPercent").value(org.hamcrest.Matchers.nullValue()));
+        mvc.perform(remove(owner, novel)).andExpect(status().isNoContent());
+        mvc.perform(home(owner, "current")).andExpect(jsonPath("$.data.item.book.bookId").value(paper.toString()));
+        mvc.perform(add(owner, novel, "EPISODE", 2)).andExpect(status().isCreated());
+        mvc.perform(home(owner, "current")).andExpect(jsonPath("$.data.item.book.bookId").value(novel.toString()));
+        mvc.perform(home(other, "current")).andExpect(jsonPath("$.data.item.currentPosition.value").value(0));
+        mvc.perform(remove(owner, novel)).andExpect(status().isNoContent());
+        mvc.perform(remove(owner, paper)).andExpect(status().isNoContent());
+        mvc.perform(home(owner, "current")).andExpect(jsonPath("$.data.item.book.bookId").value(newBook.toString()));
+    }
+
+    @Test
+    void homeSummaryAndCalendarShareKoreanDaysAndKeepRemovedRecords() throws Exception {
+        var owner = member(true);
+        var other = member(true);
+        UUID paper = edition("BOOK", "Summary paper", 100);
+        UUID novel = edition("WEB_NOVEL", "Summary novel", null);
+        mvc.perform(add(owner, paper, "PAGE", 20)).andExpect(status().isCreated());
+        mvc.perform(add(owner, novel, "EPISODE", 4)).andExpect(status().isCreated());
+        mvc.perform(add(other, paper, "PAGE", 0)).andExpect(status().isCreated());
+        Instant start = Instant.parse("2026-10-31T15:00:00Z");
+        Instant end = Instant.parse("2026-11-30T15:00:00Z");
+        seedUnits(owner, paper, start.minusNanos(1000), 98);
+        seedUnits(owner, paper, start, 10);
+        seedUnits(owner, paper, start.plusSeconds(1), 5);
+        seedUnits(owner, novel, start, 2);
+        seedUnits(other, paper, start, 99);
+        seedUnits(owner, paper, start.plusSeconds(86400), 0);
+        seedUnits(owner, novel, start.plusSeconds(86400), 0);
+        seedUnits(owner, paper, end.minusNanos(1000), 20);
+        seedUnits(owner, novel, end, 70);
+        mvc.perform(remove(owner, paper)).andExpect(status().isNoContent());
+        var summary = data(mvc.perform(home(owner, "summary").param("from", "2026-11-01").param("to", "2026-11-30"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.pages").value(35))
+                .andExpect(jsonPath("$.data.episodes").value(2)).andExpect(jsonPath("$.data.activeDays").value(2))
+                .andExpect(jsonPath("$.data.timeZone").value("Asia/Seoul"))
+                .andExpect(jsonPath("$.data.daily[0].pages").value(15))
+                .andExpect(jsonPath("$.data.daily[0].episodes").value(2))
+                .andExpect(jsonPath("$.data.daily[1].hasActivity").value(false))
+                .andExpect(jsonPath("$.data.daily[2].hasActivity").value(false))
+                .andExpect(jsonPath("$.data.daily[29].pages").value(20)));
+        var calendar = data(mvc.perform(home(owner, "calendar").param("month", "2026-11")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.month").value("2026-11"))
+                .andExpect(jsonPath("$.data.timeZone").value("Asia/Seoul")));
+        assertThat(calendar.path("days")).isEqualTo(summary.path("daily"));
+        var days = new java.util.ArrayList<String>();
+        long pages = 0, episodes = 0, active = 0;
+        for (var day : calendar.path("days")) {
+            days.add(day.path("date").asString());
+            pages += day.path("pages").asLong();
+            episodes += day.path("episodes").asLong();
+            if (day.path("hasActivity").asBoolean()) active++;
+        }
+        assertThat(days).containsExactlyElementsOf(LocalDate.of(2026, 11, 1)
+                .datesUntil(LocalDate.of(2026, 12, 1)).map(LocalDate::toString).toList());
+        assertThat(List.of(pages, episodes, active)).containsExactly(35L, 2L, 2L);
+        mvc.perform(home(owner, "summary").param("from", "2026-11-01").param("to", "2026-11-01"))
+                .andExpect(jsonPath("$.data.daily.length()").value(1)).andExpect(jsonPath("$.data.pages").value(15));
+    }
+
+    @Test
+    void homeSummaryExcludesInitialAndRepeatedReadingAndCountsReattachmentOnce() throws Exception {
+        var owner = member(true);
+        UUID book = edition("BOOK", "Actual records", 100);
+        String today = time.instant().atZone(ZoneId.of("Asia/Seoul")).toLocalDate().toString();
+        mvc.perform(add(owner, book, "PAGE", 40)).andExpect(status().isCreated());
+        mvc.perform(home(owner, "summary").param("from", today).param("to", today))
+                .andExpect(jsonPath("$.data.pages").value(0)).andExpect(jsonPath("$.data.activeDays").value(0));
+        move(owner, book, progressTag(owner, book, 0), "PAGE", 30);
+        move(owner, book, progressTag(owner, book, 1), "PAGE", 35);
+        move(owner, book, progressTag(owner, book, 2), "PAGE", 35);
+        mvc.perform(remove(owner, book)).andExpect(status().isNoContent());
+        mvc.perform(add(owner, book, "PAGE", 45)).andExpect(status().isCreated());
+        assertThat(records(owner, book)).isEqualTo(3);
+        mvc.perform(home(owner, "summary").param("from", today).param("to", today))
+                .andExpect(jsonPath("$.data.pages").value(5)).andExpect(jsonPath("$.data.activeDays").value(1));
+        db.update("UPDATE member SET status='WITHDRAWN' WHERE member_id=?", id(owner.id()));
+        error(home(owner, "summary").param("from", today).param("to", today), 401, "INVALID_CREDENTIALS");
+        error(home(owner, "current"), 401, "INVALID_CREDENTIALS");
+        db.update("UPDATE member SET status='ACTIVE' WHERE member_id=?", id(owner.id()));
+        mvc.perform(home(owner, "summary").param("from", today).param("to", today))
+                .andExpect(jsonPath("$.data.pages").value(5));
+        db.update("DELETE FROM member WHERE member_id=?", id(owner.id()));
+        assertThat(records(owner, book)).isZero();
+        error(home(owner, "calendar").param("month", today.substring(0, 7)), 401, "INVALID_CREDENTIALS");
+    }
+
+    @Test
+    void homeAggregatesAcrossHistoricalSeoulOffsetChangesWithoutIntegerOverflow() throws Exception {
+        var owner = member(true);
+        UUID book = edition("BOOK", "Historical day", null);
+        mvc.perform(add(owner, book, "PAGE", 0)).andExpect(status().isCreated());
+        // The local clock advanced from 02:00 to 03:00 on this day.
+        Instant transition = Instant.parse("1988-05-07T17:00:00Z");
+        seedUnits(owner, book, transition.minusNanos(1000), Integer.MAX_VALUE);
+        seedUnits(owner, book, transition, Integer.MAX_VALUE);
+        var result = data(mvc.perform(home(owner, "summary").param("from", "1988-05-08").param("to", "1988-05-08"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.activeDays").value(1)));
+        assertThat(result.path("pages").asLong()).isEqualTo(2L * Integer.MAX_VALUE);
+        assertThat(result.path("daily").get(0).path("pages").asLong()).isEqualTo(2L * Integer.MAX_VALUE);
+    }
+
+    @Test
+    void homeValidatesRequiredParametersRangesAndAllMonthLengths() throws Exception {
+        var owner = member(true);
+        var pending = member(false);
+        error(get("/api/v1/me/reading/current"), 401, "INVALID_CREDENTIALS");
+        error(home(pending, "current"), 403, "TERMS_RECONSENT_REQUIRED");
+        error(home(pending, "summary").param("from", "2026-02-01").param("to", "2026-02-02"),
+                403, "TERMS_RECONSENT_REQUIRED");
+        error(home(pending, "calendar").param("month", "2026-02"), 403, "TERMS_RECONSENT_REQUIRED");
+        error(home(owner, "summary").param("from", "2026-11-01"), 400, "INVALID_REQUEST");
+        error(home(owner, "summary").param("from", "2026-11-31").param("to", "2026-12-01"), 400, "INVALID_REQUEST");
+        error(home(owner, "summary").param("from", "2026-12-02").param("to", "2026-12-01"), 400, "VALIDATION_ERROR");
+        error(home(owner, "summary").param("from", "2024-01-01").param("to", "2025-01-01"), 400, "VALIDATION_ERROR");
+        mvc.perform(home(owner, "summary").param("from", "2024-01-01").param("to", "2024-12-31"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.daily.length()").value(366))
+                .andExpect(jsonPath("$.data.pages").value(0)).andExpect(jsonPath("$.data.activeDays").value(0));
+        error(home(owner, "calendar"), 400, "INVALID_REQUEST");
+        error(home(owner, "calendar").param("month", "2026-2"), 400, "INVALID_REQUEST");
+        error(home(owner, "calendar").param("month", "2026-13"), 400, "INVALID_REQUEST");
+        for (String month : List.of("2026-01", "2026-02", "2024-02", "2026-11")) {
+            YearMonth expected = YearMonth.parse(month);
+            mvc.perform(home(owner, "calendar").param("month", month)).andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.days.length()").value(expected.lengthOfMonth()))
+                    .andExpect(jsonPath("$.data.days[0].date").value(expected.atDay(1).toString()))
+                    .andExpect(jsonPath("$.data.days[-1].date").value(expected.atEndOfMonth().toString()))
+                    .andExpect(jsonPath("$.data.days[*].pages", org.hamcrest.Matchers.everyItem(org.hamcrest.Matchers.is(0))))
+                    .andExpect(jsonPath("$.data.days[*].episodes", org.hamcrest.Matchers.everyItem(org.hamcrest.Matchers.is(0))))
+                    .andExpect(jsonPath("$.data.days[*].hasActivity", org.hamcrest.Matchers.everyItem(org.hamcrest.Matchers.is(false))));
+        }
+    }
+
+    private static MockHttpServletRequestBuilder home(Member member, String route) {
+        return get("/api/v1/me/reading/" + route).header("Authorization", member.bearer());
+    }
+
+    private void seedUnits(Member member, UUID book, Instant time, int units) {
+        db.update("""
+                INSERT INTO book_reading_record(record_id,member_id,book_id,from_value,to_value,added_units,recorded_at)
+                VALUES (?,?,?,0,?,?,?)
+                """, id(UUID.randomUUID()), id(member.id()), id(book), units, units,
+                LocalDateTime.ofInstant(time, ZoneOffset.UTC));
+    }
+
+    @Test
     void exposesShelfMethodsAndBearerInOpenApi() throws Exception {
         mvc.perform(get("/v3/api-docs")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.paths['" + SHELF + "'].get.security[0].bearerAuth").exists())
@@ -649,7 +828,10 @@ class ShelfApiTests {
                 .andExpect(jsonPath("$.paths['" + SHELF + "/{bookId}'].delete.responses['204']").exists())
                 .andExpect(jsonPath("$.paths['" + SHELF + "/{bookId}/progress'].get.responses['200'].headers.ETag").exists())
                 .andExpect(jsonPath("$.paths['" + SHELF + "/{bookId}/progress'].patch.responses['428']").exists())
-                .andExpect(jsonPath("$.paths['/api/v1/me/reading/records'].get.security[0].bearerAuth").exists());
+                .andExpect(jsonPath("$.paths['/api/v1/me/reading/records'].get.security[0].bearerAuth").exists())
+                .andExpect(jsonPath("$.paths['/api/v1/me/reading/current'].get.security[0].bearerAuth").exists())
+                .andExpect(jsonPath("$.paths['/api/v1/me/reading/summary'].get.responses['200']").exists())
+                .andExpect(jsonPath("$.paths['/api/v1/me/reading/calendar'].get.parameters[0].required").value(true));
     }
 
     private int records(Member owner, UUID book) {

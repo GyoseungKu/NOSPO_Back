@@ -13,10 +13,12 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.time.format.DateTimeParseException;
 import java.util.Collections;
 import java.util.UUID;
 import kr.nospo.book.application.ProgressTags;
+import kr.nospo.book.application.ReadingHomeService;
 import kr.nospo.book.application.ReadingRecordService;
 import kr.nospo.book.application.ShelfService;
 import kr.nospo.book.contract.*;
@@ -37,11 +39,13 @@ public class ReadingController {
     private final ShelfService shelf;
     private final ReadingRecordService records;
     private final ProgressTags tags;
+    private final ReadingHomeService home;
 
-    public ReadingController(ShelfService shelf, ReadingRecordService records, ProgressTags tags) {
+    public ReadingController(ShelfService shelf, ReadingRecordService records, ProgressTags tags, ReadingHomeService home) {
         this.shelf = shelf;
         this.records = records;
         this.tags = tags;
+        this.home = home;
     }
 
     @GetMapping(PROGRESS)
@@ -119,6 +123,68 @@ public class ReadingController {
         return kr.nospo.support.ApiResponse.of(records.list(owner(jwt), date(from), date(to),
                 bookId == null ? null : BookRequest.id(bookId), cursor, BookRequest.limit(limit)));
     }
+
+    @GetMapping("/reading/current")
+    @Operation(summary = "지금 읽는 책", description = "활성 회원이 필수 약관에 동의해야 합니다. "
+            + "활성 서재에서 가장 최근에 진도를 변경한 책을 반환합니다. 변경 이력이 없으면 최근 등록한 책을 반환합니다.",
+            responses = {
+                @ApiResponse(responseCode = "200", description = "책 한 권 또는 item=null", useReturnTypeSchema = true,
+                    content = @Content(mediaType = "application/json", examples = @ExampleObject(name = "빈 서재",
+                        value = "{\"data\":{\"item\":null},\"meta\":{\"requestId\":\"00000000-0000-0000-0000-000000000001\"}}"))),
+                @ApiResponse(responseCode = "401", description = "인증 또는 세션 오류"),
+                @ApiResponse(responseCode = "403", description = "TERMS_RECONSENT_REQUIRED")})
+    public kr.nospo.support.ApiResponse<Current> current(@AuthenticationPrincipal Jwt jwt) {
+        return kr.nospo.support.ApiResponse.of(new Current(shelf.current(owner(jwt)).orElse(null)));
+    }
+
+    @GetMapping("/reading/summary")
+    @Operation(summary = "기간별 독서량 요약", description = "활성 회원과 필수 약관 동의가 필요합니다. "
+            + "Asia/Seoul 기준 양 끝을 포함해 최대 366일입니다. PAGE와 EPISODE는 따로 집계하고 "
+            + "독서량이 0인 날짜도 반환합니다. activeDays는 새 독서량이 있는 날짜 수입니다.",
+            responses = {
+                @ApiResponse(responseCode = "200", description = "기간 합계와 일별 독서량", useReturnTypeSchema = true,
+                    content = @Content(mediaType = "application/json", examples = @ExampleObject(name = "활동 없음", value = """
+                        {"data":{"from":"2026-11-01","to":"2026-11-01","timeZone":"Asia/Seoul","pages":0,"episodes":0,
+                        "activeDays":0,"daily":[{"date":"2026-11-01","pages":0,"episodes":0,"hasActivity":false}]},
+                        "meta":{"requestId":"00000000-0000-0000-0000-000000000001"}}
+                        """))),
+                @ApiResponse(responseCode = "400", description = "필수 날짜 누락, 형식 오류, 역전 또는 366일 초과"),
+                @ApiResponse(responseCode = "401", description = "인증 또는 세션 오류"),
+                @ApiResponse(responseCode = "403", description = "TERMS_RECONSENT_REQUIRED")})
+    public kr.nospo.support.ApiResponse<ReadingHomeService.Summary> summary(@AuthenticationPrincipal Jwt jwt,
+            @Parameter(schema = @Schema(type = "string", format = "date"), example = "2026-11-01") @RequestParam String from,
+            @Parameter(schema = @Schema(type = "string", format = "date"), example = "2026-11-07") @RequestParam String to) {
+        return kr.nospo.support.ApiResponse.of(home.summary(owner(jwt), date(from), date(to)));
+    }
+
+    @GetMapping("/reading/calendar")
+    @Operation(summary = "월별 독서 캘린더", description = "활성 회원과 필수 약관 동의가 필요합니다. "
+            + "Asia/Seoul 기준 해당 월의 모든 날짜를 오름차순으로 반환합니다. "
+            + "새 독서량이 없는 날짜는 pages와 episodes가 0이고 hasActivity는 false입니다.",
+            responses = {
+                @ApiResponse(responseCode = "200", description = "월 전체 일별 독서량", useReturnTypeSchema = true),
+                @ApiResponse(responseCode = "400", description = "필수 month 누락 또는 YYYY-MM 형식 오류"),
+                @ApiResponse(responseCode = "401", description = "인증 또는 세션 오류"),
+                @ApiResponse(responseCode = "403", description = "TERMS_RECONSENT_REQUIRED")})
+    public kr.nospo.support.ApiResponse<ReadingHomeService.Calendar> calendar(@AuthenticationPrincipal Jwt jwt,
+            @Parameter(schema = @Schema(type = "string", pattern = "^[0-9]{4}-[0-9]{2}$"),
+                    example = "2026-11") @RequestParam String month) {
+        return kr.nospo.support.ApiResponse.of(home.calendar(owner(jwt), month(month)));
+    }
+
+    private static YearMonth month(String raw) {
+        if (raw.matches("[0-9]{4}-[0-9]{2}")) {
+            try {
+                YearMonth result = YearMonth.parse(raw);
+                if (result.getYear() > 0) return result;
+            } catch (DateTimeParseException invalid) {
+                throw new ApiException(400, "INVALID_REQUEST");
+            }
+        }
+        throw new ApiException(400, "INVALID_REQUEST");
+    }
+
+    public record Current(@Schema(nullable = true) ShelfItem item) {}
 
     private <T> ResponseEntity<kr.nospo.support.ApiResponse<T>> respond(UUID owner, UUID book, long revision, T body) {
         return ResponseEntity.ok().eTag(tags.tag(owner, book, revision)).body(kr.nospo.support.ApiResponse.of(body));

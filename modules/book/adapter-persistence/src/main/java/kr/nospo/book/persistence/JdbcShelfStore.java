@@ -13,6 +13,7 @@ import java.util.Optional;
 import java.util.UUID;
 import kr.nospo.book.application.ShelfStore;
 import kr.nospo.book.contract.BookType;
+import kr.nospo.book.contract.DailyReading;
 import kr.nospo.book.contract.PositionContext;
 import kr.nospo.book.contract.Position;
 import kr.nospo.book.contract.PositionUnit;
@@ -87,6 +88,15 @@ public class JdbcShelfStore implements ShelfStore {
     }
 
     @Override
+    public Optional<Entry> current(UUID owner) {
+        return named.query(OWNED + """
+                 ORDER BY p.last_progress_at DESC,
+                          CASE WHEN p.last_progress_at IS NULL THEN s.added_at END DESC,
+                          s.book_id DESC LIMIT 1
+                """, new MapSqlParameterSource("owner", id(owner)), this::entry).stream().findFirst();
+    }
+
+    @Override
     public List<Entry> list(UUID owner, BookType type, ShelfSort sort, Boundary after, int fetch) {
         String key = switch (sort) {
             case TITLE -> "CAST(b.title AS BINARY(2048))";
@@ -157,6 +167,23 @@ public class JdbcShelfStore implements ShelfStore {
                     new Position(unit, row.getInt("from_value")), new Position(unit, row.getInt("to_value")),
                     row.getInt("added_units"), instant(row, "recorded_at"));
         });
+    }
+
+    @Override
+    public List<DailyReading> dailyTotals(UUID owner, Instant start, Instant end, int offsetSeconds) {
+        var args = new MapSqlParameterSource("owner", id(owner)).addValue("start", utc(start))
+                .addValue("end", utc(end)).addValue("offset", offsetSeconds);
+        return named.query("""
+                SELECT CAST({fn TIMESTAMPADD(SQL_TSI_SECOND, :offset, r.recorded_at)} AS DATE) AS reading_day,
+                       SUM(CASE WHEN b.book_type='BOOK' THEN r.added_units ELSE 0 END) AS pages,
+                       SUM(CASE WHEN b.book_type='WEB_NOVEL' THEN r.added_units ELSE 0 END) AS episodes
+                FROM book_reading_record r
+                JOIN member m ON m.member_id=r.member_id AND m.status='ACTIVE'
+                JOIN book_edition b ON b.book_id=r.book_id
+                WHERE r.member_id=:owner AND r.recorded_at>=:start AND r.recorded_at<:end AND r.added_units>0
+                GROUP BY reading_day
+                """, args, (row, n) -> DailyReading.of(row.getObject("reading_day", java.time.LocalDate.class),
+                        row.getLong("pages"), row.getLong("episodes")));
     }
 
     private Entry entry(ResultSet row, int ignored) throws SQLException {
