@@ -97,5 +97,7 @@ dependencies {
     implementation project(':account-lifecycle:adapter-worker')
     implementation project(':notice:adapter-persistence')
     implementation project(':notice:adapter-web')
+    implementation project(':wiki:adapter-persistence')
+    testImplementation project(':wiki:application')
     testImplementation project(':notice:application')
 }
