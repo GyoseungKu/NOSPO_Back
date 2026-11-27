@@ -2,7 +2,10 @@ package kr.nospo.book.web;
 
 import java.util.UUID;
 import kr.nospo.book.application.BookNames;
+import kr.nospo.book.contract.Position;
+import kr.nospo.book.contract.PositionUnit;
 import kr.nospo.support.ApiException;
+import tools.jackson.databind.JsonNode;
 
 final class BookRequest {
     private BookRequest() {}
@@ -33,6 +36,19 @@ final class BookRequest {
             throw invalid();
         }
         throw invalid();
+    }
+
+    static Position position(JsonNode position) {
+        var failure = new ApiException(422, "INVALID_POSITION");
+        if (position == null || !position.isObject()) throw failure;
+        var value = position.path("value");
+        var unit = position.path("unit");
+        if (!value.isIntegralNumber() || !value.canConvertToInt() || !unit.isString()) throw failure;
+        try {
+            return new Position(PositionUnit.valueOf(unit.asString()), value.asInt());
+        } catch (IllegalArgumentException invalidUnit) {
+            throw failure;
+        }
     }
 
     private static ApiException invalid() {

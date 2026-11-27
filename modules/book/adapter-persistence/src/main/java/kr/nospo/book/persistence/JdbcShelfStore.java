@@ -14,6 +14,9 @@ import java.util.UUID;
 import kr.nospo.book.application.ShelfStore;
 import kr.nospo.book.contract.BookType;
 import kr.nospo.book.contract.PositionContext;
+import kr.nospo.book.contract.Position;
+import kr.nospo.book.contract.PositionUnit;
+import kr.nospo.book.contract.ReadingRecord;
 import kr.nospo.book.contract.ShelfSort;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -111,11 +114,49 @@ public class JdbcShelfStore implements ShelfStore {
     }
 
     @Override
-    public void record(UUID owner, UUID bookId, int from, int to, int addedUnits, Instant recordedAt) {
+    public UUID record(UUID owner, UUID bookId, int from, int to, int addedUnits, Instant recordedAt) {
+        UUID recordId = UUID.randomUUID();
         db.update("""
                 INSERT INTO book_reading_record(record_id,member_id,book_id,from_value,to_value,added_units,recorded_at)
                 VALUES (?,?,?,?,?,?,?)
-                """, id(UUID.randomUUID()), id(owner), id(bookId), from, to, addedUnits, utc(recordedAt));
+                """, id(recordId), id(owner), id(bookId), from, to, addedUnits, utc(recordedAt));
+        return recordId;
+    }
+
+    @Override
+    public List<ReadingRecord> records(UUID owner, UUID bookId, Instant start, Instant end, RecordBoundary after,
+            int fetch) {
+        var args = new MapSqlParameterSource("owner", id(owner)).addValue("fetch", fetch);
+        String sql = """
+                SELECT r.record_id,r.book_id,r.from_value,r.to_value,r.added_units,r.recorded_at,b.book_type
+                FROM book_reading_record r
+                JOIN member m ON m.member_id=r.member_id AND m.status='ACTIVE'
+                JOIN book_edition b ON b.book_id=r.book_id
+                WHERE r.member_id=:owner
+                """;
+        if (bookId != null) {
+            sql += " AND r.book_id=:book";
+            args.addValue("book", id(bookId));
+        }
+        if (start != null) {
+            sql += " AND r.recorded_at>=:start";
+            args.addValue("start", utc(start));
+        }
+        if (end != null) {
+            sql += " AND r.recorded_at<:end";
+            args.addValue("end", utc(end));
+        }
+        if (after != null) {
+            sql += " AND (r.recorded_at<:afterTime OR (r.recorded_at=:afterTime AND r.record_id<:afterId))";
+            args.addValue("afterTime", utc(after.recordedAt())).addValue("afterId", id(after.recordId()));
+        }
+        return named.query(sql + " ORDER BY r.recorded_at DESC,r.record_id DESC LIMIT :fetch", args, (row, n) -> {
+            var unit = BookType.valueOf(row.getString("book_type")) == BookType.BOOK
+                    ? PositionUnit.PAGE : PositionUnit.EPISODE;
+            return new ReadingRecord(uuid(row.getBytes("record_id")), uuid(row.getBytes("book_id")),
+                    new Position(unit, row.getInt("from_value")), new Position(unit, row.getInt("to_value")),
+                    row.getInt("added_units"), instant(row, "recorded_at"));
+        });
     }
 
     private Entry entry(ResultSet row, int ignored) throws SQLException {

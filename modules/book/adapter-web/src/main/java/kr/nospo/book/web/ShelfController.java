@@ -120,16 +120,7 @@ public class ShelfController {
             @Schema(format = "uuid", requiredMode = Schema.RequiredMode.REQUIRED) String bookId,
             @Schema(implementation = Position.class, requiredMode = Schema.RequiredMode.REQUIRED) JsonNode position) {
         Position validatedPosition() {
-            var failure = new ApiException(422, "INVALID_POSITION");
-            if (position == null || !position.isObject()) throw failure;
-            var value = position.path("value");
-            var unit = position.path("unit");
-            if (!value.isIntegralNumber() || !value.canConvertToInt() || !unit.isString()) throw failure;
-            try {
-                return new Position(PositionUnit.valueOf(unit.asString()), value.asInt());
-            } catch (IllegalArgumentException invalidUnit) {
-                throw failure;
-            }
+            return BookRequest.position(position);
         }
     }
 }

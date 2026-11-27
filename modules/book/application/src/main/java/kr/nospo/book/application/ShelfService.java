@@ -7,6 +7,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -19,7 +20,7 @@ import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
-public class ShelfService {
+public class ShelfService implements ReadingProgressCatalog {
     private static final Duration CURSOR_TTL = Duration.ofMinutes(15);
 
     private final ShelfStore shelf;
@@ -30,9 +31,12 @@ public class ShelfService {
     private final SignupIdentity identity;
     private final Clock clock;
     private final BookCursor cursors;
+    private final ProgressTags progressTags;
+
+    public record ProgressUpdate(Snapshot snapshot, int addedUnits, UUID recordId) {}
 
     ShelfService(ShelfStore shelf, BookCatalog catalog, BookStore books, ShelfEditionRegistration editions,
-            Members members, SignupIdentity identity, Clock clock, BookCursor cursors) {
+            Members members, SignupIdentity identity, Clock clock, BookCursor cursors, ProgressTags progressTags) {
         this.shelf = shelf;
         this.catalog = catalog;
         this.books = books;
@@ -41,6 +45,7 @@ public class ShelfService {
         this.identity = identity;
         this.clock = clock;
         this.cursors = cursors;
+        this.progressTags = progressTags;
     }
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
@@ -110,6 +115,42 @@ public class ShelfService {
         if (!shelf.detach(owner, bookId)) throw notFound();
     }
 
+    @Override
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public Optional<Snapshot> activeProgress(UUID owner, UUID bookId) {
+        return shelf.find(owner, bookId).flatMap(row -> catalog.find(bookId).map(book -> snapshot(book, row)));
+    }
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public ProgressUpdate changeProgress(UUID owner, UUID session, UUID bookId, String ifMatch, Position position) {
+        lockOwner(owner, session);
+        var row = shelf.find(owner, bookId).orElseThrow(ShelfService::notFound);
+        var previous = row.progress();
+        progressTags.check(ifMatch, owner, bookId, previous.revision());
+        var book = catalog.find(bookId).orElseThrow(ShelfService::notFound);
+        validate(book, position);
+        int current = position.value();
+        if (current == previous.current()) return new ProgressUpdate(snapshot(book, row), 0, null);
+
+        int added = Math.max(0, current - previous.highest());
+        var now = clock.instant().truncatedTo(ChronoUnit.MICROS);
+        shelf.updateProgress(owner, bookId, new ShelfStore.Progress(current,
+                Math.max(previous.highest(), current), now, previous.revision() + 1));
+        UUID record = shelf.record(owner, bookId, previous.current(), current, added, now);
+        var updated = shelf.find(owner, bookId).orElseThrow();
+        return new ProgressUpdate(snapshot(book, updated), added, record);
+    }
+
+    private static Snapshot snapshot(Book book, ShelfStore.Entry row) {
+        var progress = row.progress();
+        Instant updatedAt = progress.lastProgressAt();
+        if (updatedAt == null || updatedAt.isBefore(row.addedAt())) updatedAt = row.addedAt();
+        var unit = book.positionUnit();
+        return new Snapshot(new Progress(book.bookId(), new Position(unit, progress.current()),
+                new Position(unit, progress.highest()), row.context(), percent(book, progress.current()), updatedAt),
+                progress.revision());
+    }
+
     private void lockOwner(UUID owner, UUID session) {
         // Match the lifecycle lock order so withdrawal cannot race past a shelf write.
         members.lockActive(owner);
@@ -128,13 +169,14 @@ public class ShelfService {
     private static ShelfItem item(Book book, ShelfStore.Entry row) {
         var progress = row.progress();
         var unit = book.positionUnit();
-        BigDecimal percent = null;
-        if (book.totalUnits() != null) {
-            percent = book.totalUnits() == 0 ? BigDecimal.ZERO : BigDecimal.valueOf(progress.current())
-                    .movePointRight(2).divide(BigDecimal.valueOf(book.totalUnits()), 2, RoundingMode.HALF_UP);
-        }
         return new ShelfItem(book.summary(), new Position(unit, progress.current()), new Position(unit, progress.highest()),
-                row.context(), percent, row.addedAt(), progress.lastProgressAt());
+                row.context(), percent(book, progress.current()), row.addedAt(), progress.lastProgressAt());
+    }
+
+    private static BigDecimal percent(Book book, int current) {
+        if (book.totalUnits() == null) return null;
+        return book.totalUnits() == 0 ? BigDecimal.ZERO : BigDecimal.valueOf(current)
+                .movePointRight(2).divide(BigDecimal.valueOf(book.totalUnits()), 2, RoundingMode.HALF_UP);
     }
 
     private static ApiException notFound() {

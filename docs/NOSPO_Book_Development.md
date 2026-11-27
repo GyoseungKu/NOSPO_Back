@@ -162,3 +162,31 @@ Book 3단계는 같은 회원 행 잠금 순서와 ShelfStore의 progress 및 re
 Book 3단계는 이미 등록 가능한 영구 판본을 기준으로 진행할 수 있다. 신규 카카오 판본 활성화는 허용 필드, 갱신 및 보존 기간, 서재 밖 재표시·공유 제한을 확정한 뒤 별도 반영한다. 기존 H2 Refresh·탈퇴 잠금 경합은 Known Issue로 유지한다.
 
 선별 회귀 184건 통과, 실패·오류·스킵 각 0건이다. H2·MySQL 서재 테스트 각각 12건에서 운영 기본 차단, 신규 판본 후보의 테스트 승인·경합·롤백을 검증했다. 검증 내역은 [Book 2.5단계 결과 보고서](Terms_Reconsent_Analysis.md)에 기록했다.
+
+## Book 3단계 — 독서 진도·독서 기록
+
+| 메서드 | 경로 | 성공 |
+| --- | --- | --- |
+| GET | `/api/v1/me/shelf/{bookId}/progress` | 200 Progress와 ETag |
+| PATCH | `/api/v1/me/shelf/{bookId}/progress` | 200 Progress, addedUnits, recordId 및 ETag |
+| GET | `/api/v1/me/reading/records` | 200 Page<ReadingRecord> |
+
+Progress는 bookId, currentPosition, highestPosition, positionContext, progressPercent, updatedAt이다. Position은 PAGE 또는 EPISODE 단위와 0 이상의 정수 값이다. 웹소설 회차 표시의 기준은 현재 지점의 실제 전역 회차 번호다. 총량을 모르면 백분율은 null이며 권·챕터는 표시용 레이블이다. updatedAt은 마지막 진도 변경 또는 최근 등록 시각 중 최신 시각이다.
+
+### 조건부 쓰기와 기록
+
+HTTP ETag는 명세의 revision 예시를 확장한 `"progress-{revision}-{HMAC}"` 형식이다. HMAC은 회원 UUID, 영구 판본 UUID, DB revision에 결합한다. 프론트는 GET에서 받은 값을 수정 없이 PATCH If-Match에 넣고, 412이면 최신 진도를 다시 조회한다. 헤더 누락은 428, 약한 태그·와일드카드·여러 값·잘못된 문법은 400, 이전 버전·다른 리소스·서명 불일치는 412다. 기존 허용 Origin에서 진도 경로에만 If-Match 요청과 ETag 읽기를 허용했다.
+
+PATCH는 기존 회원 행부터 잠그고 세션을 재확인한다. 같은 READ COMMITTED 트랜잭션에서 활성 서재의 최신 revision과 If-Match 확인, 단위와 총량 검증, UPDATE와 기록 INSERT를 실행한다. 실제 이동이면 revision을 한 번 늘리고 기존 current와 새 current를 기록한다. 최고는 `max(이전 최고, 새 위치)`, 증가분은 `max(0, 새 위치 - 이전 최고)`다. 뒤로 이동과 기존 최고 이내 이동에는 0이 기록된다. 동일 위치 저장은 200과 기존 ETag 및 시각, addedUnits=0, recordId=null을 반환한다. 실패 시 진도와 기록은 함께 롤백된다.
+
+읽기 목록은 활성 서재 연결 없이 회원 소유 기록을 조회하므로 서재 삭제 전 기록도 남는다. from/to는 YYYY-MM-DD의 Asia/Seoul 날짜이고 UTC로 환산한 시작 포함·종료 다음 날 미포함을 사용한다. 두 날짜가 있으면 양 끝 포함 최대 366일이며 한쪽만 지정하면 그쪽만 제한한다. V13의 회원·판본·시각 인덱스를 재사용해 recordedAt DESC, recordId DESC 키셋으로 읽는다. 암호화·서명 커서는 회원·날짜·판본·limit에 결합하고 15분간 유효하다. 응답 시각과 DB 시각은 UTC다.
+
+### 연동과 후속 범위
+
+기존 인증, 약관 재동의와 탈퇴 정책을 사용한다. 활성 링크가 없는 진도는 404이며 기록은 기존 30일 복구 보존을 거쳐 최종 파기에서 연쇄 삭제된다. V13과 ERD를 재사용했고 카카오 신규 판본 저장 차단을 유지했다. Swagger에 세 경로와 ETag/If-Match, PAGE/EPISODE 예시, 필터 및 공통 오류를 추가했다.
+
+Wiki·AI 팀에는 `ReadingProgressCatalog.activeProgress(memberId, bookId)`를 제공한다. 해당 포트는 활성 회원과 활성 서재에 한해 현재·최고 위치 및 revision을 반환한다. 호출자가 먼저 사용자 인증·권한을 확인하고, 노출 상한은 currentPosition으로 계산한다.
+
+Book 4단계는 동일 기록의 UTC 구간을 Asia/Seoul 날짜로 묶고 `added_units > 0`만 PAGE·EPISODE의 독서량과 activeDays에 반영한다. 홈·요약·캘린더 API와 이를 포함한 전체 회귀는 Book 4단계에서 2026-11-29까지 실행할 후속 범위다. 기존 H2 Refresh·탈퇴 잠금 경합은 Known Issue로 유지한다.
+
+최종 선별 회귀 200건이 통과했다. 실패·오류·스킵은 각 0건이다. H2와 MySQL 서재 스위트에서 각각 진도·기록 검증 6건을 추가했다. 실제 실행 범위 및 CORS 분리 재검증은 [Book 3단계 결과 보고서](Terms_Reconsent_Analysis.md)에 기록했다.

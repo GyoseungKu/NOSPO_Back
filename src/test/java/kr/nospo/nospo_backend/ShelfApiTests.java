@@ -50,6 +50,7 @@ class ShelfApiTests {
     @Autowired FixtureClock time;
     @MockitoBean BookSearchProvider provider;
     @MockitoSpyBean KakaoShelfStoragePolicy kakaoPolicy;
+    @MockitoSpyBean kr.nospo.book.application.ShelfStore shelfStore;
 
     @TestConfiguration
     static class TimeConfig {
@@ -277,6 +278,7 @@ class ShelfApiTests {
                 .andExpect(jsonPath("$.data.book.bookId").value(permanent.toString()));
         error(add(owner, permanent, "PAGE", 0), 409, "SHELF_ALREADY_EXISTS");
         error(detail(owner, temp), 404, "RESOURCE_NOT_FOUND");
+        error(progressGet(owner, temp), 404, "RESOURCE_NOT_FOUND");
         time.now.updateAndGet(t -> t.plusSeconds(301));
         error(add(member(true), temp, "PAGE", 0), 404, "RESOURCE_NOT_FOUND");
         var missingFromCache = new UUID(0x0000000000008000L, 0x8000000000000000L);
@@ -411,13 +413,243 @@ class ShelfApiTests {
     }
 
     @Test
+    void progressTracksRevisionHighWaterMarkAndEveryActualMove() throws Exception {
+        var owner = member(true);
+        UUID book = edition("BOOK", "Progress fixture", 100);
+        mvc.perform(add(owner, book, "PAGE", 40)).andExpect(status().isCreated());
+        String tag0 = progressTag(owner, book, 0);
+        var backward = move(owner, book, tag0, "PAGE", 30)
+                .andExpect(jsonPath("$.data.addedUnits").value(0))
+                .andExpect(jsonPath("$.data.recordId").isString())
+                .andExpect(jsonPath("$.data.highestPosition.value").value(40));
+        String tag1 = etag(backward);
+        var forward = move(owner, book, tag1, "PAGE", 45)
+                .andExpect(jsonPath("$.data.highestPosition.value").value(45))
+                .andExpect(jsonPath("$.data.currentPosition.value").value(45))
+                .andExpect(jsonPath("$.data.progressPercent").value(45))
+                .andExpect(jsonPath("$.data.addedUnits").value(5));
+        var recordId = data(forward).path("recordId").asString();
+        String tag2 = etag(forward);
+        assertThat(tag2).startsWith("\"progress-2-").isNotEqualTo(tag1);
+        time.now.updateAndGet(now -> now.plusSeconds(2));
+        move(owner, book, tag2, "PAGE", 45).andExpect(header().string("ETag", tag2))
+                .andExpect(jsonPath("$.data.addedUnits").value(0))
+                .andExpect(jsonPath("$.data.recordId").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.data.updatedAt").value(data(forward).path("updatedAt").asString()));
+        String tag3 = etag(move(owner, book, tag2, "PAGE", 20));
+        move(owner, book, tag3, "PAGE", 40).andExpect(jsonPath("$.data.addedUnits").value(0))
+                .andExpect(jsonPath("$.data.recordId").isString())
+                .andExpect(jsonPath("$.data.highestPosition.value").value(45));
+        assertThat(records(owner, book)).isEqualTo(4);
+        var row = db.queryForMap("SELECT from_value,to_value,added_units FROM book_reading_record WHERE record_id=?",
+                id(UUID.fromString(recordId)));
+        assertThat(row).containsEntry("from_value", 30).containsEntry("to_value", 45).containsEntry("added_units", 5);
+    }
+
+    @Test
+    void progressValidatesEtagsAndPositionsWithoutChangingStateOnFailure() throws Exception {
+        var owner = member(true);
+        var other = member(true);
+        UUID book = edition("BOOK", "ETag", 50);
+        UUID otherBook = edition("BOOK", "Other edition", 50);
+        mvc.perform(add(owner, book, "PAGE", 10)).andExpect(status().isCreated());
+        mvc.perform(add(owner, otherBook, "PAGE", 10)).andExpect(status().isCreated());
+        mvc.perform(add(other, book, "PAGE", 10)).andExpect(status().isCreated());
+        String tag = progressTag(owner, book, 0);
+        String body = "{\"position\":{\"unit\":\"PAGE\",\"value\":15}}";
+        error(progressPatch(owner, book, body), 428, "PRECONDITION_REQUIRED");
+        for (String invalid : List.of("*", "W/" + tag, "\"progress-0\"", tag + ", " + tag, "")) {
+            error(progressPatch(owner, book, body).header("If-Match", invalid), 400, "INVALID_REQUEST");
+        }
+        error(progressPatch(owner, book, body).header("If-Match", tag, tag), 400, "INVALID_REQUEST");
+        for (String wrong : List.of(progressTag(owner, otherBook, 0), progressTag(other, book, 0),
+                tag.replaceFirst("progress-0-(.)", tag.charAt(12) == 'A' ? "progress-0-B" : "progress-0-A"))) {
+            error(progressPatch(owner, book, body).header("If-Match", wrong), 412, "VERSION_MISMATCH");
+        }
+        for (String invalid : List.of("null", "{\"unit\":null,\"value\":5}", "{\"unit\":\"PAGE\",\"value\":null}",
+                "{\"unit\":\"PAGE\",\"value\":2.5}", "{\"unit\":\"PAGE\",\"value\":\"5\"}",
+                "{\"unit\":\"PAGE\",\"value\":-1}", "{\"unit\":\"PAGE\",\"value\":51}",
+                "{\"unit\":\"EPISODE\",\"value\":5}")) {
+            error(progressPatch(owner, book, "{\"position\":" + invalid + "}").header("If-Match", tag), 422,
+                    "INVALID_POSITION");
+        }
+        assertThat(progressTag(owner, book, 0)).isEqualTo(tag);
+        assertThat(records(owner, book)).isZero();
+        var updated = progressPatch(owner, book, body).header("if-match", tag);
+        mvc.perform(updated).andExpect(status().isOk());
+        error(progressPatch(owner, book, body).header("If-Match", tag), 412, "VERSION_MISMATCH");
+        assertThat(records(owner, book)).isOne();
+    }
+
+    @Test
+    void progressSerializesConcurrentPatchesAndUsesCurrentEpisodeAfterReattachment() throws Exception {
+        var owner = member(true);
+        UUID book = edition("WEB_NOVEL", "Episode progress", null);
+        db.update("""
+                INSERT INTO book_episode(episode_id,book_id,sequence_no,episode_label,volume_label,chapter_label)
+                VALUES (?,?,3,'3화','2권','구간 B')
+                """, id(UUID.randomUUID()), id(book));
+        mvc.perform(add(owner, book, "EPISODE", 1)).andExpect(status().isCreated());
+        String first = progressTag(owner, book, 0);
+        String body = "{\"position\":{\"unit\":\"EPISODE\",\"value\":3}}";
+        assertThat(race(() -> response(progressPatch(owner, book, body).header("If-Match", first)),
+                () -> response(progressPatch(owner, book, body).header("If-Match", first))))
+                .containsExactlyInAnyOrder(200, 412);
+        assertThat(records(owner, book)).isOne();
+        mvc.perform(progressGet(owner, book)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.positionContext.volumeLabel").value("2권"))
+                .andExpect(jsonPath("$.data.positionContext.chapterLabel").value("구간 B"))
+                .andExpect(jsonPath("$.data.positionContext.episodeLabel").value("3화"))
+                .andExpect(jsonPath("$.data.progressPercent").value(org.hamcrest.Matchers.nullValue()));
+        String previous = progressTag(owner, book, 1);
+        mvc.perform(remove(owner, book)).andExpect(status().isNoContent());
+        error(progressGet(owner, book), 404, "RESOURCE_NOT_FOUND");
+        error(progressPatch(owner, book, body).header("If-Match", previous), 404, "RESOURCE_NOT_FOUND");
+        mvc.perform(add(owner, book, "EPISODE", 4)).andExpect(status().isCreated());
+        error(progressPatch(owner, book, body).header("If-Match", previous), 412, "VERSION_MISMATCH");
+        move(owner, book, progressTag(owner, book, 2), "EPISODE", 5)
+                .andExpect(jsonPath("$.data.addedUnits").value(1));
+        assertThat(records(owner, book)).isEqualTo(3);
+        mvc.perform(recordList(owner).param("bookId", book.toString())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items[*].toPosition.unit", org.hamcrest.Matchers.everyItem(
+                        org.hamcrest.Matchers.is("EPISODE"))));
+    }
+
+    @Test
+    void progressWriteRollsBackWhenRecordInsertFails() throws Exception {
+        var owner = member(true);
+        UUID book = edition("BOOK", "Rollback", 100);
+        mvc.perform(add(owner, book, "PAGE", 5)).andExpect(status().isCreated());
+        String tag = progressTag(owner, book, 0);
+        org.mockito.Mockito.doThrow(new kr.nospo.support.ApiException(409, "REQUEST_IN_PROGRESS"))
+                .when(shelfStore).record(org.mockito.ArgumentMatchers.eq(owner.id()), org.mockito.ArgumentMatchers.eq(book),
+                        org.mockito.ArgumentMatchers.eq(5), org.mockito.ArgumentMatchers.eq(10),
+                        org.mockito.ArgumentMatchers.eq(5), org.mockito.ArgumentMatchers.any());
+        error(progressPatch(owner, book, "{\"position\":{\"unit\":\"PAGE\",\"value\":10}}").header("If-Match", tag),
+                409, "REQUEST_IN_PROGRESS");
+        mvc.perform(progressGet(owner, book)).andExpect(header().string("ETag", tag))
+                .andExpect(jsonPath("$.data.currentPosition.value").value(5))
+                .andExpect(jsonPath("$.data.highestPosition.value").value(5));
+        assertThat(records(owner, book)).isZero();
+    }
+
+    @Test
+    void readingRecordsUseKoreanDateScopesAndStableUuidTieBreakersAfterRemoval() throws Exception {
+        var owner = member(true);
+        var other = member(true);
+        UUID book = edition("BOOK", "Reading records", 100);
+        UUID novel = edition("WEB_NOVEL", "Other records", 100);
+        mvc.perform(add(owner, book, "PAGE", 0)).andExpect(status().isCreated());
+        mvc.perform(add(owner, novel, "EPISODE", 0)).andExpect(status().isCreated());
+        mvc.perform(add(other, book, "PAGE", 0)).andExpect(status().isCreated());
+        Instant boundary = Instant.parse("2026-11-25T15:00:00Z");
+        UUID low = new UUID(1, 0);
+        UUID high = new UUID(Long.MIN_VALUE, 0);
+        insertRecord(owner, book, new UUID(2, 0), boundary.minusNanos(1000));
+        insertRecord(owner, book, low, boundary);
+        insertRecord(owner, book, high, boundary);
+        insertRecord(owner, novel, new UUID(3, 0), boundary);
+        insertRecord(other, book, new UUID(4, 0), boundary);
+        mvc.perform(remove(owner, book)).andExpect(status().isNoContent());
+        var page1 = data(mvc.perform(datedRecords(owner, book).param("limit", "1"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.items[0].recordId").value(high.toString()))
+                .andExpect(jsonPath("$.data.items[0].fromPosition.unit").value("PAGE"))
+                .andExpect(jsonPath("$.data.items[0].recordedAt").value(boundary.toString())));
+        String cursor = page1.path("nextCursor").asString();
+        mvc.perform(datedRecords(owner, book).param("limit", "1").param("cursor", cursor))
+                .andExpect(jsonPath("$.data.items[0].recordId").value(low.toString()))
+                .andExpect(jsonPath("$.data.hasNext").value(false));
+        mvc.perform(recordList(owner).param("to", "2026-11-25"))
+                .andExpect(jsonPath("$.data.items.length()").value(1));
+        mvc.perform(recordList(owner).param("from", "2026-11-26").param("limit", "100"))
+                .andExpect(jsonPath("$.data.items.length()").value(3));
+        error(datedRecords(other, book).param("limit", "1").param("cursor", cursor), 400, "INVALID_CURSOR");
+        error(datedRecords(owner, novel).param("limit", "1").param("cursor", cursor), 400, "INVALID_CURSOR");
+        error(recordList(owner).param("limit", "1").param("cursor", cursor), 400, "INVALID_CURSOR");
+        error(datedRecords(owner, book).param("limit", "1").param("cursor", flip(cursor)), 400, "INVALID_CURSOR");
+        error(recordList(owner).param("from", "2026-02-30"), 400, "INVALID_REQUEST");
+        error(recordList(owner).param("from", "2025-01-01").param("to", "2026-11-26"), 422, "VALIDATION_ERROR");
+        error(recordList(owner).param("limit", "101"), 422, "VALIDATION_ERROR");
+        time.now.updateAndGet(now -> now.plusSeconds(901));
+        error(datedRecords(owner, book).param("limit", "1").param("cursor", cursor), 400, "INVALID_CURSOR");
+        mvc.perform(recordList(member(true))).andExpect(status().isOk()).andExpect(jsonPath("$.data.items").isEmpty());
+    }
+
+    @Test
+    void readingUsesExistingAuthorizationAndOnlyProgressCorsAllowsIfMatch() throws Exception {
+        var owner = member(true);
+        var other = member(true);
+        var pending = member(false);
+        UUID book = edition("BOOK", "Reading security", 100);
+        mvc.perform(add(owner, book, "PAGE", 0)).andExpect(status().isCreated());
+        String progress = SHELF + "/" + book + "/progress";
+        error(get(progress), 401, "INVALID_CREDENTIALS");
+        error(get("/api/v1/me/reading/records"), 401, "INVALID_CREDENTIALS");
+        error(progressGet(pending, book), 403, "TERMS_RECONSENT_REQUIRED");
+        error(recordList(pending), 403, "TERMS_RECONSENT_REQUIRED");
+        error(progressGet(other, book), 404, "RESOURCE_NOT_FOUND");
+        error(progressGet(owner, UUID.randomUUID()), 404, "RESOURCE_NOT_FOUND");
+        String origin = "http://localhost:3000";
+        mvc.perform(options(progress).header("Origin", origin).header("Access-Control-Request-Method", "PATCH")
+                .header("Access-Control-Request-Headers", "Authorization, Content-Type, If-Match"))
+                .andExpect(status().isOk()).andExpect(header().string("Access-Control-Allow-Headers",
+                        org.hamcrest.Matchers.containsString("If-Match")));
+        mvc.perform(progressGet(owner, book).header("Origin", origin))
+                .andExpect(header().string("Access-Control-Expose-Headers", "ETag"));
+        mvc.perform(options(SHELF).header("Origin", origin).header("Access-Control-Request-Method", "POST")
+                .header("Access-Control-Request-Headers", "If-Match")).andExpect(status().isForbidden());
+    }
+
+    private void insertRecord(Member owner, UUID book, UUID recordId, Instant time) {
+        db.update("""
+                INSERT INTO book_reading_record(record_id,member_id,book_id,from_value,to_value,added_units,recorded_at)
+                VALUES (?,?,?,0,1,1,?)
+                """, id(recordId), id(owner.id()), id(book), LocalDateTime.ofInstant(time, ZoneOffset.UTC));
+    }
+
+    private static MockHttpServletRequestBuilder datedRecords(Member owner, UUID book) {
+        return recordList(owner).param("bookId", book.toString()).param("from", "2026-11-26").param("to", "2026-11-26");
+    }
+
+    private static MockHttpServletRequestBuilder recordList(Member owner) {
+        return get("/api/v1/me/reading/records").header("Authorization", owner.bearer());
+    }
+
+    private static MockHttpServletRequestBuilder progressGet(Member owner, UUID book) {
+        return get(SHELF + "/" + book + "/progress").header("Authorization", owner.bearer());
+    }
+
+    private static MockHttpServletRequestBuilder progressPatch(Member owner, UUID book, String body) {
+        return patch(SHELF + "/" + book + "/progress").header("Authorization", owner.bearer())
+                .contentType("application/json").content(body);
+    }
+
+    private ResultActions move(Member owner, UUID book, String tag, String unit, int value) throws Exception {
+        return mvc.perform(progressPatch(owner, book, """
+                {"position":{"unit":"%s","value":%d}}
+                """.formatted(unit, value)).header("If-Match", tag)).andExpect(status().isOk());
+    }
+
+    private String progressTag(Member owner, UUID book, int revision) throws Exception {
+        return etag(mvc.perform(progressGet(owner, book)).andExpect(status().isOk())
+                .andExpect(header().string("ETag", org.hamcrest.Matchers.startsWith("\"progress-" + revision + "-"))));
+    }
+
+    private static String etag(ResultActions actions) {
+        return actions.andReturn().getResponse().getHeader("ETag");
+    }
+
+    @Test
     void exposesShelfMethodsAndBearerInOpenApi() throws Exception {
         mvc.perform(get("/v3/api-docs")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.paths['" + SHELF + "'].get.security[0].bearerAuth").exists())
                 .andExpect(jsonPath("$.paths['" + SHELF + "'].post.responses['201']").exists())
                 .andExpect(jsonPath("$.paths['" + SHELF + "'].post.requestBody.content['application/json'].examples.WEB_NOVEL").exists())
                 .andExpect(jsonPath("$.paths['" + SHELF + "/{bookId}'].get.responses['404']").exists())
-                .andExpect(jsonPath("$.paths['" + SHELF + "/{bookId}'].delete.responses['204']").exists());
+                .andExpect(jsonPath("$.paths['" + SHELF + "/{bookId}'].delete.responses['204']").exists())
+                .andExpect(jsonPath("$.paths['" + SHELF + "/{bookId}/progress'].get.responses['200'].headers.ETag").exists())
+                .andExpect(jsonPath("$.paths['" + SHELF + "/{bookId}/progress'].patch.responses['428']").exists())
+                .andExpect(jsonPath("$.paths['/api/v1/me/reading/records'].get.security[0].bearerAuth").exists());
     }
 
     private int records(Member owner, UUID book) {
