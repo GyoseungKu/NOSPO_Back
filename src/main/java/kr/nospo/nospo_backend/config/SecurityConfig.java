@@ -113,7 +113,8 @@ public class SecurityConfig {
         CorsConfiguration cors = new CorsConfiguration();
         cors.setAllowedOrigins(allowedOrigins);
         cors.setAllowedMethods(List.of("GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"));
-        cors.setAllowedHeaders(List.of("Content-Type", "Authorization", "Idempotency-Key"));
+        cors.setAllowedHeaders(List.of("Content-Type", "Authorization", "Idempotency-Key", "If-Match"));
+        cors.setExposedHeaders(List.of("ETag"));
         cors.setAllowCredentials(true);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         var noticeCors = new CorsConfiguration(cors);
@@ -148,6 +149,10 @@ public class SecurityConfig {
                                         "/api/v1/auth/signup/kakao",
                                         "/api/v1/auth/signup/kakao/context",
                                         "/api/v1/me/**",
+                                        "/api/v1/wiki/drafts",
+                                        "/api/v1/wiki/drafts/**",
+                                        "/api/v1/wiki/submissions/**",
+                                        "/api/v1/admin/wiki/submissions/**",
                                         "/api/v1/auth/signup",
                                         "/api/v1/auth/signup/email-verifications",
                                         "/api/v1/auth/signup/email-verifications/confirm",

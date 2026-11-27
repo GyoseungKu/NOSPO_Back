@@ -74,3 +74,43 @@ Flyway가 테이블을 생성합니다. 실제 약관 본문은 포함하지 않
 - 전체 검증: `./gradlew test bootJar`
 
 MySQL 테스트는 Docker가 없으면 건너뜁니다. 테스트 메일은 대체 발송기로 검증하며 실제 SMTP 수신함 도착을 검증하지 않습니다.
+
+## 도서 Wiki
+
+Wiki는 Book의 영구 판본 ID(`book_edition.book_id`)를 사용합니다. 독자는 로그인 후 해당 판본을 서재에 등록해야 합니다. 조회 지점을 생략하면 현재 진도를 사용하며, 일반 도서는 `PAGE`, 웹소설은 `EPISODE`입니다. 과거 지점을 조회하면 그때까지 공개된 프로필·세부 항목·관계·이미지만 표시합니다.
+
+### 실행과 병합
+
+- 이 브랜치에서는 Wiki 모듈을 독립적으로 빌드하고, 테스트에서 Book 조회를 대체합니다. 실제 초안 작성과 공개 조회는 `feat/reading`의 Book 모듈이 포함된 병합본에서 실행합니다.
+- Book이 포함되면 `ReadingWikiBookAccess`가 `BookCatalog.find`와 `ReadingProgressCatalog.activeProgress`를 사용합니다. AI가 포함되면 승인 Wiki 조회가 질문·관계도에 연결되고 양수 보상을 토큰 원장에서 볼 수 있습니다. 샘플용 `ai-local` 프로필은 자체 데이터를 사용하므로 실제 도서 연동 확인 때는 해제합니다.
+- 새 테스트 DB의 적용 순서는 Book V12·V13, Wiki V14, AI V15·V16, Wiki 검수·이미지 V17, Book 외래 키 V18입니다. V18은 Book 모듈을 포함해 빌드할 때 등록됩니다. 기존 DB는 적용된 Flyway 버전과 파일을 확인한 뒤 병합본을 실행합니다.
+- Wiki 편집·검수와 관계도는 GPT 키 없이 동작합니다. 실제 GPT 질문을 사용하려면 AI 설정에 `OPENAI_API_KEY`를 주입합니다.
+
+### API 사용 흐름
+
+모든 경로는 `/api/v1` 기준이며 Bearer Access 토큰이 필요합니다.
+
+| 순서 | 요청 | 확인할 결과 |
+| --- | --- | --- |
+| 초안 만들기 | `POST /wiki/drafts`에 `bookId`, `mode`, `position` 전달. 수정이면 `wikiId`, `baseWikiVersion` 추가 | `201`, `draftId`, `ETag` |
+| 편집하기 | `/wiki/drafts/{draftId}` 아래의 `characters`, `organizations`, `profiles`, `entries`, `relations`, `assets` 편집 | 마지막 응답의 `ETag`를 다음 `If-Match`에 사용 |
+| 제출하기 | `POST /wiki/drafts/{draftId}/submissions`에 `If-Match`와 UUID `Idempotency-Key` 전달 | `201 PENDING`, 제출 스냅샷 고정 |
+| 관리자 검수 | `GET /admin/wiki/submissions/{submissionId}`로 검수 `ETag` 확인 후 `POST /admin/wiki/submissions/{submissionId}/approve` | `200 APPROVED`, 새 공개 버전 생성 |
+| 읽기 | `GET /books/{bookId}/wiki` 및 하위 `characters`, `organizations`, `relations` | 현재 진도 범위의 승인 내용과 Wiki 버전 |
+| 수정 요청·재제출 | 관리자 `request-changes` 후 작성자가 `POST /wiki/submissions/{submissionId}/revision-drafts` | 수정 초안 생성 또는 기존 초안 재사용. 충돌 항목 편집 후 새 제출 생성 |
+
+첫 승인 요청 예시는 `{"rewardAmount":0,"rewardReason":"공개 범위 검수 완료","expectedWikiVersion":0}`입니다. 승인·수정 요청·반려에는 `If-Match`와 UUID `Idempotency-Key`를 전달합니다. 변경 시 `If-Match` 누락은 `428`, 버전 불일치는 `412`입니다. 이미 편집한 다른 검수 건이 먼저 승인되었으면 `409 WIKI_VERSION_CONFLICT`가 반환됩니다. 관리자 지정 양수 보상은 승인·공개 버전·원장과 같은 트랜잭션에서 처리합니다.
+
+이미지는 `POST /wiki/drafts/{draftId}/assets`에 multipart `file`과 초안 `If-Match`를 전달합니다. 반환된 `assetId`를 프로필의 `imageAssetId`에 넣고 업로드 응답의 새 `ETag`로 저장합니다. 서버는 JPEG·PNG·WebP 정지 이미지의 실제 형식, 최대 5 MiB, 최대 4,096px를 검사하고 메타데이터를 제거해 PNG로 저장합니다. 이미지는 Bearer 헤더로 `GET /wiki/assets/{assetId}`를 호출해 받습니다.
+
+전체 요청·응답 계약은 [기능 및 API 명세 §8–11, §14.1](docs/NOSPO_Function_API_v2.1.md)과 [API 요약표](docs/NOSPO_API_Summary.xlsx)를 참고합니다.
+
+### 테스트
+
+```sh
+sh gradlew test --tests '*Wiki*Tests'
+```
+
+Book·Wiki·AI를 함께 체크아웃하면 실제 Book 저장소와 AI 작업 큐, 위키 보상 원장을 연결하는 통합 테스트도 실행됩니다. 질문은 테스트용 HTTP 응답을 사용합니다. Docker가 실행 중이면 동일 시나리오를 MySQL 8.4 Testcontainers에서도 실행합니다.
+
+Docker 대신 별도의 빈 MySQL 테스트 DB를 사용할 때는 `NOSPO_WIKI_TEST_MYSQL_URL`, `NOSPO_WIKI_TEST_MYSQL_USER`, `NOSPO_WIKI_TEST_MYSQL_PASSWORD`를 설정한 뒤 `sh gradlew test --tests 'kr.nospo.nospo_backend.wiki.WikiBookAiIntegrationTests'`를 실행합니다. 테스트는 Flyway 마이그레이션을 적용하고 테스트 회원과 도서를 삽입합니다.

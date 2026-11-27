@@ -52,7 +52,7 @@ class WikiFoundationTests {
     void storesPrivateSnapshotsSeparatelyFromEditionScopedPublicVersions() {
         var source = new DriverManagerDataSource(
                 "jdbc:h2:mem:wiki_" + UUID.randomUUID() + ";MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1", "sa", "");
-        Flyway.configure().dataSource(source).load().migrate();
+        Flyway.configure().dataSource(source).target("17").load().migrate();
         var db = new JdbcTemplate(source);
         var store = new JdbcWikiStore(db);
         UUID member = UUID.randomUUID();

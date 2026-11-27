@@ -90,7 +90,7 @@ project(':notice').projectDir = file('modules/notice')
 include ':wiki'
 project(':wiki').projectDir = file('modules/wiki')
 
-['application', 'adapter-persistence'].each { name ->
+['application', 'adapter-persistence', 'adapter-web'].each { name ->
     include ":wiki:${name}"
     project(":wiki:${name}").projectDir = file("modules/wiki/${name}")
 }

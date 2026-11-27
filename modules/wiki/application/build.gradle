@@ -1,4 +1,9 @@
 plugins { id 'java-library' }
 dependencies {
     implementation project(':support')
+    implementation project(':member:application')
+    implementation 'org.springframework:spring-context'
+    api 'org.springframework:spring-tx'
+    implementation 'org.springframework:spring-jdbc'
+    api 'tools.jackson.core:jackson-databind'
 }

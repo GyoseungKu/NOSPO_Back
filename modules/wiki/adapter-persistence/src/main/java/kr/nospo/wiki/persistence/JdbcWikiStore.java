@@ -1,6 +1,8 @@
 package kr.nospo.wiki.persistence;
 
 import java.util.Optional;
+import java.util.List;
+import java.util.ArrayList;
 import java.util.UUID;
 
 import kr.nospo.wiki.application.WikiBookAccess.Position;
@@ -14,13 +16,17 @@ import static kr.nospo.support.SqlIds.*;
 
 @Repository
 public class JdbcWikiStore implements WikiStore {
-    private static final RowMapper<Draft> DRAFT = (row, index) -> new Draft(
+    static final RowMapper<Draft> DRAFT = (row, index) -> new Draft(
             uuid(row.getBytes("draft_id")), uuid(row.getBytes("member_id")), uuid(row.getBytes("book_id")),
             Mode.valueOf(row.getString("mode")), DraftStatus.valueOf(row.getString("status")),
             new Position(Unit.valueOf(row.getString("position_unit")), row.getInt("position_value")),
             uuid(row.getBytes("wiki_id")), row.getObject("base_wiki_version", Integer.class),
             uuid(row.getBytes("parent_submission_id")), row.getLong("revision"), row.getString("snapshot"),
             row.getTimestamp("updated_at").toInstant());
+
+    private static final RowMapper<PublishedVersion> VERSION = (row, index) -> new PublishedVersion(
+            uuid(row.getBytes("wiki_id")), uuid(row.getBytes("book_id")), row.getInt("version"),
+            row.getString("snapshot"), row.getTimestamp("published_at").toInstant());
 
     private final JdbcTemplate db;
 
@@ -41,9 +47,59 @@ public class JdbcWikiStore implements WikiStore {
     }
 
     @Override
+    public void initializeDraftSnapshot(UUID draft, String snapshot) {
+        db.update("UPDATE wiki_draft SET snapshot=? WHERE draft_id=? AND status='DRAFT' AND revision=0",
+                snapshot, id(draft));
+    }
+
+    @Override
     public Optional<Draft> findDraft(UUID memberId, UUID draftId) {
         return db.query("SELECT * FROM wiki_draft WHERE member_id=? AND draft_id=?",
                 DRAFT, id(memberId), id(draftId)).stream().findFirst();
+    }
+
+    @Override
+    public List<Draft> drafts(UUID memberId, UUID bookId, DraftCursor after, int limit) {
+        String sql = "SELECT * FROM wiki_draft WHERE member_id=? AND status='DRAFT'";
+        var args = new ArrayList<Object>();
+        args.add(id(memberId));
+        if (bookId != null) {
+            sql += " AND book_id=?";
+            args.add(id(bookId));
+        }
+        if (after != null) {
+            sql += " AND (updated_at<? OR (updated_at=? AND draft_id<?))";
+            args.add(at(after.updatedAt()));
+            args.add(at(after.updatedAt()));
+            args.add(id(after.id()));
+        }
+        args.add(limit);
+        return db.query(sql + " ORDER BY updated_at DESC,draft_id DESC LIMIT ?", DRAFT, args.toArray());
+    }
+
+    @Override
+    public boolean saveDraft(Draft draft, long expectedRevision) {
+        return db.update("""
+                UPDATE wiki_draft SET position_value=?,snapshot=?,revision=revision+1,updated_at=?
+                WHERE member_id=? AND draft_id=? AND status='DRAFT' AND revision=?
+                """, draft.position().value(), draft.snapshot(), at(draft.updatedAt()),
+                id(draft.memberId()), id(draft.id()), expectedRevision) == 1;
+    }
+
+    @Override
+    public boolean deleteDraft(UUID memberId, UUID draftId, long expectedRevision) {
+        return db.update("""
+                DELETE FROM wiki_draft WHERE member_id=? AND draft_id=? AND status='DRAFT' AND revision=?
+                """, id(memberId), id(draftId), expectedRevision) == 1;
+    }
+
+    @Override
+    public Optional<PublishedVersion> findVersion(UUID bookId, UUID wikiId, int version) {
+        return db.query("""
+                SELECT w.wiki_id,w.book_id,v.version,v.snapshot,v.published_at
+                FROM wiki w JOIN wiki_version v ON v.wiki_id=w.wiki_id
+                WHERE w.book_id=? AND w.wiki_id=? AND v.version=?
+                """, VERSION, id(bookId), id(wikiId), version).stream().findFirst();
     }
 
     @Override
@@ -86,8 +142,7 @@ public class JdbcWikiStore implements WikiStore {
                 SELECT w.wiki_id,w.book_id,v.version,v.snapshot,v.published_at
                 FROM wiki w JOIN wiki_version v ON v.wiki_id=w.wiki_id
                 WHERE w.book_id=? ORDER BY v.version DESC LIMIT 1
-                """, (row, index) -> new PublishedVersion(uuid(row.getBytes("wiki_id")), uuid(row.getBytes("book_id")),
-                row.getInt("version"), row.getString("snapshot"), row.getTimestamp("published_at").toInstant()),
+                """, VERSION,
                 id(bookId)).stream().findFirst();
     }
 }
