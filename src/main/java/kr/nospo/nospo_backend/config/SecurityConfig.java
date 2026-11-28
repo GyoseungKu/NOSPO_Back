@@ -120,6 +120,7 @@ public class SecurityConfig {
         cors.setAllowCredentials(true);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         var noticeCors = new CorsConfiguration(cors);
+        noticeCors.setAllowedHeaders(cors.getAllowedHeaders());
         noticeCors.addAllowedHeader("X-CSRF-TOKEN");
         noticeCors.addExposedHeader("X-CSRF-TOKEN");
         source.registerCorsConfiguration("/api/v1/admin/notices", noticeCors);
@@ -131,6 +132,14 @@ public class SecurityConfig {
         progressCors.addAllowedHeader("If-Match");
         progressCors.addExposedHeader("ETag");
         source.registerCorsConfiguration("/api/v1/me/shelf/{bookId}/progress", progressCors);
+        var wikiCors = new CorsConfiguration(cors);
+        wikiCors.setAllowedHeaders(cors.getAllowedHeaders());
+        wikiCors.addAllowedHeader("If-Match");
+        wikiCors.setExposedHeaders(List.of("ETag"));
+        source.registerCorsConfiguration("/api/v1/wiki/drafts", wikiCors);
+        source.registerCorsConfiguration("/api/v1/wiki/drafts/**", wikiCors);
+        source.registerCorsConfiguration("/api/v1/wiki/submissions/**", wikiCors);
+        source.registerCorsConfiguration("/api/v1/admin/wiki/submissions/**", wikiCors);
         source.registerCorsConfiguration("/api/**", cors);
         return http.cors(c -> c.configurationSource(source))
                 .addFilterBefore(new OncePerRequestFilter() {
@@ -157,6 +166,10 @@ public class SecurityConfig {
                                         "/api/v1/auth/signup/kakao",
                                         "/api/v1/auth/signup/kakao/context",
                                         "/api/v1/me/**",
+                                        "/api/v1/wiki/drafts",
+                                        "/api/v1/wiki/drafts/**",
+                                        "/api/v1/wiki/submissions/**",
+                                        "/api/v1/admin/wiki/submissions/**",
                                         "/api/v1/auth/signup",
                                         "/api/v1/auth/signup/email-verifications",
                                         "/api/v1/auth/signup/email-verifications/confirm",

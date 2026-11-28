@@ -101,5 +101,21 @@ dependencies {
     implementation project(':book:adapter-persistence')
     implementation project(':book:adapter-web')
     implementation project(':book:adapter-integration')
+    implementation project(':wiki:adapter-persistence')
+    implementation project(':wiki:adapter-web')
+    implementation project(':wiki:application')
     testImplementation project(':notice:application')
+}
+
+// These adapters are compiled when their owning feature modules are present in the combined checkout.
+if (findProject(':book:contract') != null) {
+    sourceSets.main.java.srcDir 'src/integrationBook/java'
+    sourceSets.main.resources.srcDir 'src/integrationBook/resources'
+    dependencies { implementation project(':book:contract') }
+}
+if (findProject(':ai:application') != null) {
+    sourceSets.main.java.srcDir 'src/integrationAi/java'
+}
+if (findProject(':book:contract') != null && findProject(':ai:application') != null) {
+    sourceSets.test.java.srcDir 'src/integrationWikiTest/java'
 }
