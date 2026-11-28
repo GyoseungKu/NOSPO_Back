@@ -1,0 +1,9 @@
+plugins { id 'java-library' }
+dependencies {
+    implementation project(':credit:contract')
+    implementation project(':member:contract')
+    implementation project(':support')
+    implementation 'org.springframework:spring-context'
+    api 'org.springframework:spring-tx'
+    implementation 'tools.jackson.core:jackson-databind'
+}

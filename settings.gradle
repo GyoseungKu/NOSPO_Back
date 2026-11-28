@@ -102,3 +102,14 @@ project(':wiki').projectDir = file('modules/wiki')
     include ":wiki:${name}"
     project(":wiki:${name}").projectDir = file("modules/wiki/${name}")
 }
+
+include ':credit:adapter-web'
+project(':credit:adapter-web').projectDir = file('modules/credit/adapter-web')
+
+include ':ai'
+project(':ai').projectDir = file('modules/ai')
+
+['application', 'adapter-persistence', 'adapter-web', 'adapter-integration', 'adapter-worker'].each { name ->
+    include ":ai:${name}"
+    project(":ai:${name}").projectDir = file("modules/ai/${name}")
+}

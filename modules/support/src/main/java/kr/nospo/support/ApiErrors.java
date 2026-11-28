@@ -42,7 +42,9 @@ public class ApiErrors {
 
     @ExceptionHandler(ApiException.class)
     ResponseEntity<?> handle(ApiException ex) {
-        var builder = ResponseEntity.status(ex.status()).header("Cache-Control", "no-store");
+        var builder = ResponseEntity.status(ex.status())
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .header("Cache-Control", "no-store");
         if (ex.retryAfter() > 0) builder.header("Retry-After", Long.toString(ex.retryAfter()));
         return builder.body(body(ex.code()));
     }

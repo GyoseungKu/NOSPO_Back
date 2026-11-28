@@ -11,9 +11,55 @@ NOSPO Web/App Back-End Project
 문서·약관·가입 API는 인증 없이 접근 가능합니다. `/api/v1/me`는 가입 후 받은 Bearer JWT로 호출합니다.
 Swagger에는 구현된 컨트롤러만 표시됩니다.
 
+## AI 도서 질문과 토큰
+
+이메일·카카오 가입 시 기존과 동일하게 5토큰을 한 번 지급합니다. 사용자는 잔액을 조회하고, 관리자는 회원에게 토큰을 지급하거나 사용 가능한 잔액 한도에서 회수할 수 있습니다. 관계도, 위키 기여 보상, 관리자 환불과 원장 목록 조회는 후속 범위입니다.
+
+| API | 권한 | 동작 |
+| --- | --- | --- |
+| `GET /api/v1/ai/credit-policy` | 공개 | 명세에 정의된 가입 지급량과 AI 비용 정책 |
+| `GET /api/v1/me/ai/credits` | 본인 | `balance`, `reserved`, `available` |
+| `GET /api/v1/admin/members/{memberId}/ai/credits` | 관리자 | 활성 회원의 잔액 |
+| `POST /api/v1/admin/members/{memberId}/ai/credit-adjustments` | 관리자 | `201` 거래 반환. 예시 `{"type":"GRANT","amount":3,"reason":"지급 사유"}`. 회수는 `RECOVERY` |
+| `POST /api/v1/ai/questions` | 본인 | `202` 접수. 작업·질문·대화 ID와 스트림 URL 반환 |
+| `GET /api/v1/ai/jobs/{jobId}` | 본인 | 대기·처리·성공·실패 상태와 청구 토큰 수 |
+| `GET /api/v1/ai/questions/{questionId}` | 본인 | 완료 답변·출처 또는 실패 상태 |
+| `GET /api/v1/ai/questions/{questionId}/events` | 본인 | SSE `started`, `delta`, `completed`, `failed` |
+| `GET /api/v1/me/ai/conversations` | 본인 | 대화 목록. `bookId`, `cursor`, `limit` 선택 |
+| `GET /api/v1/ai/conversations/{conversationId}` | 본인 | 대화 상세 |
+| `GET /api/v1/ai/conversations/{conversationId}/messages` | 본인 | 메시지 이력. `cursor`, `limit` 선택 |
+
+두 POST에는 Bearer JWT와 UUID `Idempotency-Key`가 필요합니다. 같은 키·같은 요청은 24시간 안에 기존 작업이나 거래를 반환하며, 값이 다르면 `409 IDEMPOTENCY_CONFLICT`입니다. 관리자는 서버에 저장된 현재 `ADMIN` 역할과 필수 약관 준수 상태로 판정합니다. 조정에는 처리자·사유·시각을 남깁니다. 잔액 5개 중 1개가 질문에 예약돼 있다면 회수 최대치는 4개입니다.
+
+### 로컬에서 OpenAI 연결
+
+기본 실행에는 실서재·위키 어댑터가 없으므로 질문 접수는 `503 AI_UNAVAILABLE`로 응답합니다. 잔액 및 관리자 조정은 일반 실행에서도 사용할 수 있습니다.
+
+1. IntelliJ 실행 설정 또는 셸에 `OPENAI_API_KEY`를 등록합니다. 선택적으로 `OPENAI_MODEL`을 지정할 수 있으며 기본값은 `gpt-5-mini`입니다.
+2. 일반 실행 설정에 `ai-local` 프로필을 추가합니다. Windows에서 명령으로 실행할 때는 `.\gradlew.bat bootRun --args="--spring.profiles.active=ai-local"`을 사용합니다. 이 프로필은 로컬 DB 전용입니다.
+3. 로그인한 회원의 JWT로 아래 요청을 `POST /api/v1/ai/questions`에 보냅니다. 샘플 도서의 현재 진도는 40화이며, 10화부터 공개되는 근거가 하나 있습니다. `position`을 생략하면 현재 진도를 사용합니다. 후속 질문에는 앞서 받은 `conversationId`를 넣습니다.
+
+```json
+{
+  "bookId": "00000000-0000-0000-0000-000000000101",
+  "position": { "unit": "EPISODE", "value": 10 },
+  "question": "별빛 도서관의 지도 보관소를 누가 열었어?"
+}
+```
+
+응답의 `eventsUrl`을 Bearer 헤더를 넣은 `fetch` 스트림으로 엽니다. 끊기면 마지막 이벤트의 `id`를 `Last-Event-ID` 헤더로 보냅니다. 완료 후 24시간이 지나 재생이 만료되면 질문 결과 API에서 복원할 수 있습니다. 질문 접수 시 1토큰을 예약하고, 답변 저장이 성공하면 차감합니다. 생성 실패 또는 접수 후 180초 초과 시 예약을 해제합니다. SSE 연결 종료는 작업을 취소하지 않습니다.
+
+OpenAI 키는 서버가 읽으며 Git이나 프런트엔드에 넣지 않습니다. 서버는 OpenAI Chat Completions에 승인 공개 범위의 스냅샷, 해당 범위와 같은 위키 버전의 최근 대화, 질문을 보냅니다. 실제 키를 설정한 로컬 실행에서도 OpenAI API 비용이 발생할 수 있습니다. [OpenAI 스트리밍 문서](https://developers.openai.com/api/reference/resources/chat/subresources/completions/streaming-events)
+
+### 실제 서재·위키 연동
+
+`AiBookContext` 구현체에 판본 ID·진도 단위·총 분량, 회원의 서재 등록과 현재 진도, 해당 지점의 승인 공개 스냅샷을 연결합니다. 스냅샷은 위키 버전, 인물·단체, 세부 항목, 양 끝이 공개된 유효 관계를 제공하며, AI는 질문 접수 시 입력을 고정합니다. 결과와 스트림은 현재 서재·진도를 다시 확인합니다. 관계도를 추가할 때 스냅샷의 인물·단체 ID와 관계 ID를 노드·엣지의 근거로 사용할 수 있습니다.
+
+Flyway `V12__ai_credits.sql`은 기존 가입 원장과 지갑을 유지하면서 관리자 조정·AI 사용 거래, 대화·질문·스트림을 추가합니다. 기존 계정 복구 정책에 따라 완료 대화와 개인 토큰 거래는 복구 기간 동안 보존되고 최종 계정 파기 시 DB에서 함께 삭제됩니다. 탈퇴 전에 접수된 작업은 기존 회원 상태와 탈퇴 세대를 검증하여 이후 응답 저장이나 차감이 이루어지지 않게 처리합니다.
+
 ## 이메일 회원가입
 
-이메일 회원가입·로그인·Refresh 회전·로그아웃·비밀번호 재설정을 제공합니다. 가입과 로그인 시 Access JWT(15분)와 Refresh 쿠키(14일 세션)를 발급합니다. 상세 계약과 제한은 [Auth API 구현 문서](docs/Auth_API_Implementation.md)를 참고하세요. 닉네임·연락처·프로필·이메일·비밀번호 변경과 비밀번호 재인증도 구현했습니다. [내 정보 변경 문서](docs/Member_Profile_API_Implementation.md)를 참고하세요. 카카오와 탈퇴 API는 후속 구현 대상입니다.
+이메일 회원가입·로그인·Refresh 회전·로그아웃·비밀번호 재설정을 제공합니다. 가입과 로그인 시 Access JWT(15분)와 Refresh 쿠키(14일 세션)를 발급합니다. 상세 계약과 제한은 [Auth API 구현 문서](docs/Auth_API_Implementation.md)를 참고하세요. 닉네임·연락처·프로필·이메일·비밀번호 변경과 비밀번호 재인증도 구현했습니다. [내 정보 변경 문서](docs/Member_Profile_API_Implementation.md)를 참고하세요. 카카오 가입과 탈퇴·복구 흐름도 사용할 수 있습니다. 자세한 복구 조건은 [계정 복구 문서](docs/Recovery_API_Implementation.md)에 있습니다.
 
 | 순서 | API | 동작 |
 | --- | --- | --- |
@@ -61,7 +107,7 @@ Java 21, MySQL 8.4 기준입니다. IntelliJ 실행 설정 또는 OS 환경변�
 | `SMTP_AUTH`, `SMTP_STARTTLS` | SMTP 인증/TLS 활성화 여부, 기본 false |
 | `MAIL_FROM` | 실제 발신 주소 |
 
-키는 안전한 난수 생성기로 각각 생성하고 재시작 후에도 같은 값을 사용해야 대기 메일·멱등 응답을 복원할 수 있습니다. 테스트 키를 운영에 사용하지 않습니다. 키를 지정하지 않으면 서버가 시작되지 않습니다.
+인증 키는 안전한 난수 생성기로 각각 생성하고 재시작 후에도 같은 값을 사용해야 대기 메일·멱등 응답을 복원할 수 있습니다. 테스트 키를 운영에 사용하지 않습니다. 필수 인증 키를 지정하지 않으면 서버가 시작되지 않습니다.
 
 Flyway가 테이블을 생성합니다. 실제 약관 본문은 포함하지 않았으므로 승인된 SERVICE·PRIVACY 약관을 `term`, `term_version`에 별도 마이그레이션으로 등록해야 합니다. `PUBLISHED`, 시행 시각, required=true가 필요합니다. 약관이 준비되지 않으면 가입은 `503 TERMS_NOT_CONFIGURED`로 거부됩니다. 약관 발행 시에는 대상 `term` 행을 잠그고 신규 버전을 저장해야 가입의 최종 약관 검증과 직렬화됩니다.
 
@@ -71,6 +117,7 @@ Flyway가 테이블을 생성합니다. 실제 약관 본문은 포함하지 않
 
 - DB/Docker 없는 빠른 검증: `./gradlew :test --tests '*EmailSignupTests' --tests '*SwaggerUiTests' --tests '*NospoBackendApplicationTests' -PskipMysql`
 - 실제 MySQL 검증: Docker 실행 후 `./gradlew :test --tests '*MySqlEmailSignupTests'`
+- AI·토큰 검증: `./gradlew :test --tests '*AiCreditsAndQuestionsTests'`. 테스트 자체의 모의 OpenAI HTTP 서버를 사용합니다.
 - 전체 검증: `./gradlew test bootJar`
 
 MySQL 테스트는 Docker가 없으면 건너뜁니다. 테스트 메일은 대체 발송기로 검증하며 실제 SMTP 수신함 도착을 검증하지 않습니다.
