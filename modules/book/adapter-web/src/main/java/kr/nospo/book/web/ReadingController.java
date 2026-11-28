@@ -211,5 +211,6 @@ public class ReadingController {
             @Schema(implementation = Position.class, requiredMode = Schema.RequiredMode.REQUIRED) JsonNode position) {}
 
     public record Change(UUID bookId, Position currentPosition, Position highestPosition, PositionContext positionContext,
-            BigDecimal progressPercent, Instant updatedAt, int addedUnits, @Schema(nullable = true) UUID recordId) {}
+            @Schema(nullable = true) BigDecimal progressPercent, Instant updatedAt, int addedUnits,
+            @Schema(nullable = true) UUID recordId) {}
 }

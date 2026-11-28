@@ -384,6 +384,10 @@ class ShelfApiTests {
                     .andExpect(jsonPath("$.data.items.length()").value(2))
                     .andExpect(jsonPath("$.data.items[0].authors[0]").value("External author")));
             UUID temporary = UUID.fromString(found.path("items").get(0).path("bookId").asString());
+            mvc.perform(get(BOOKS + "/" + temporary)).andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.authors[0]").value("External author"))
+                    .andExpect(jsonPath("$.data.publicationDate").value("2000-01-01"))
+                    .andExpect(jsonPath("$.data.coverUrl").value("https://example.test/cover"));
             assertThat(bookCatalog.find(temporary)).isEmpty();
             assertThat(catalogRows(isbn)).isZero();
             assertThat(catalogRows(unselectedIsbn)).isZero();
@@ -403,10 +407,16 @@ class ShelfApiTests {
                     .andExpect(jsonPath("$.data.isbn").value(isbn))
                     .andExpect(jsonPath("$.data.authors").isEmpty())
                     .andExpect(jsonPath("$.data.publisher").value(org.hamcrest.Matchers.nullValue()))
-                    .andExpect(jsonPath("$.data.coverUrl").value(org.hamcrest.Matchers.nullValue()));
+                    .andExpect(jsonPath("$.data.coverUrl").value(org.hamcrest.Matchers.nullValue()))
+                    .andExpect(jsonPath("$.data.publicationDate").value(org.hamcrest.Matchers.nullValue()))
+                    .andExpect(jsonPath("$.data.totalUnits").value(org.hamcrest.Matchers.nullValue()));
             mvc.perform(get(SHELF).header("Authorization", owner.bearer())).andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.items[0].book.bookId").value(permanent.toString()));
-            mvc.perform(detail(owner, permanent)).andExpect(status().isOk());
+            mvc.perform(detail(owner, permanent)).andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.book.authors").isEmpty())
+                    .andExpect(jsonPath("$.data.book.isbn").value(isbn))
+                    .andExpect(jsonPath("$.data.book.publisher").value(org.hamcrest.Matchers.nullValue()))
+                    .andExpect(jsonPath("$.data.book.coverUrl").value(org.hamcrest.Matchers.nullValue()));
             assertThat(records(owner, permanent)).isZero();
             expectPages(owner, day, 0);
             error(progressGet(other, permanent), 404, "RESOURCE_NOT_FOUND");
@@ -426,7 +436,10 @@ class ShelfApiTests {
             mvc.perform(recordList(other)).andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.items").isEmpty());
             mvc.perform(home(owner, "current")).andExpect(status().isOk())
-                    .andExpect(jsonPath("$.data.item.book.bookId").value(permanent.toString()));
+                    .andExpect(jsonPath("$.data.item.book.bookId").value(permanent.toString()))
+                    .andExpect(jsonPath("$.data.item.book.coverUrl").value(org.hamcrest.Matchers.nullValue()))
+                    .andExpect(jsonPath("$.data.item.progressPercent").value(org.hamcrest.Matchers.nullValue()))
+                    .andExpect(jsonPath("$.data.item.currentPosition.value").value(30));
             expectPages(owner, day, 10);
             mvc.perform(remove(owner, permanent)).andExpect(status().isNoContent());
             expectPages(owner, day, 10);
@@ -939,7 +952,7 @@ class ShelfApiTests {
 
     @Test
     void exposesShelfMethodsAndBearerInOpenApi() throws Exception {
-        mvc.perform(get("/v3/api-docs")).andExpect(status().isOk())
+        var response = mvc.perform(get("/v3/api-docs")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.paths['" + SHELF + "'].get.security[0].bearerAuth").exists())
                 .andExpect(jsonPath("$.paths['" + SHELF + "'].post.responses['201']").exists())
                 .andExpect(jsonPath("$.paths['" + SHELF + "'].post.requestBody.content['application/json'].examples.WEB_NOVEL").exists())
@@ -950,7 +963,16 @@ class ShelfApiTests {
                 .andExpect(jsonPath("$.paths['/api/v1/me/reading/records'].get.security[0].bearerAuth").exists())
                 .andExpect(jsonPath("$.paths['/api/v1/me/reading/current'].get.security[0].bearerAuth").exists())
                 .andExpect(jsonPath("$.paths['/api/v1/me/reading/summary'].get.responses['200']").exists())
-                .andExpect(jsonPath("$.paths['/api/v1/me/reading/calendar'].get.parameters[0].required").value(true));
+                .andExpect(jsonPath("$.paths['/api/v1/me/reading/calendar'].get.parameters[0].required").value(true))
+                .andReturn();
+        var schemas = json.readTree(response.getResponse().getContentAsString()).at("/components/schemas");
+        for (String property : List.of("/Book/properties/totalUnits", "/Book/properties/publicationDate",
+                "/BookSummary/properties/coverUrl", "/ShelfItem/properties/progressPercent",
+                "/Progress/properties/progressPercent", "/Change/properties/progressPercent")) {
+            var schema = schemas.at(property);
+            assertThat(schema.path("nullable").asBoolean(false) || schema.path("type").valueStream()
+                    .anyMatch(type -> type.asString().equals("null"))).as(property).isTrue();
+        }
     }
 
     private int records(Member owner, UUID book) {

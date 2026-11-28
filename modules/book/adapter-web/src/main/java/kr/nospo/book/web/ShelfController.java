@@ -25,7 +25,7 @@ import tools.jackson.databind.JsonNode;
 public class ShelfController {
     private static final String SHELF_EXAMPLE = """
             {"data":{"book":{"bookId":"a01f1d26-5597-4ac4-889b-e60634a2ea34","workId":null,"bookType":"BOOK",
-            "title":"예시 도서","authors":[],"publisher":null,"editionLabel":null,"isbn":null,"coverUrl":null},
+            "title":"예시 도서","authors":[],"publisher":null,"editionLabel":null,"isbn":"9788936434120","coverUrl":null},
             "currentPosition":{"unit":"PAGE","value":20},"highestPosition":{"unit":"PAGE","value":20},
             "positionContext":{"volumeLabel":null,"chapterLabel":null,"episodeLabel":null},
             "progressPercent":null,"addedAt":"2026-11-26T03:00:00Z","lastProgressAt":null},
@@ -59,7 +59,7 @@ public class ShelfController {
     @Operation(summary = "내 서재에 판본 등록", description = "최초 등록은 독서량에 추가되지 않습니다. "
             + "유효한 카카오 검색 결과를 선택하면 출처·ISBN으로 기존 영구 판본을 찾거나 최소 정보로 생성합니다. "
             + "임시 ID가 만료되었거나 다른 서버의 캐시에만 있으면 다시 검색하세요. "
-            + "이후 상세·진도 조회에는 201 응답의 book.bookId를 사용하세요. 활성 세션과 필수 약관 동의가 필요합니다.",
+            + "이후 상세·진도 조회에는 201 응답의 data.book.bookId에 있는 영구 UUID를 사용하세요. 활성 세션과 필수 약관 동의가 필요합니다.",
             responses = {@ApiResponse(responseCode = "201", description = "등록 완료", useReturnTypeSchema = true,
                     content = @Content(mediaType = "application/json", examples = @ExampleObject(value = SHELF_EXAMPLE))),
                 @ApiResponse(responseCode = "400", description = "잘못된 JSON 또는 판본 UUID"),
@@ -72,7 +72,7 @@ public class ShelfController {
             @io.swagger.v3.oas.annotations.parameters.RequestBody(required = true, content = @Content(
                     mediaType = "application/json", schema = @Schema(implementation = AddRequest.class), examples = {
                         @ExampleObject(name = "BOOK", value = """
-                                {"bookId":"a01f1d26-5597-4ac4-889b-e60634a2ea34","position":{"unit":"PAGE","value":20}}
+                                {"bookId":"c33ad170-c37b-4a91-a906-273635d5abc6","position":{"unit":"PAGE","value":20}}
                                 """),
                         @ExampleObject(name = "WEB_NOVEL", value = """
                                 {"bookId":"a94e0120-ccbe-4834-b747-3f9e431c98af","position":{"unit":"EPISODE","value":2}}

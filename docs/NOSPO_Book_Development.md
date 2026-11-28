@@ -333,4 +333,77 @@ Authorization: Bearer <accessToken>
 
 전체 Gradle `test`는 20분 9초에 완료되었다. 1,508건 모두 통과했으며 H2 662건, MySQL Testcontainers 788건, DB 미사용 58건이다. 실패·오류·스킵은 각각 0건이었다. Book 1~4, Identity(카카오 OAuth·재동의·탈퇴·복구·파기 포함), Notice, Swagger 및 현 브랜치의 Flyway·ERD 검증을 포함한다. 기존 H2 Refresh·탈퇴 잠금 경합은 이번 실행에서 관찰되지 않았으며 Known Issue로 남긴다. 실제 카카오 REST 연동과 미보관 필드의 정책 확인은 후속 범위다.
 
+## Book 최종 연동 검증 1차
+
+### 실제 카카오 REST 검색
+
+승인 후 Spring과 DB를 띄우지 않고 프로젝트의 `KAKAO_CLIENT_ID`로 독립 GET을 5건 실행했다. 모든 요청은 `sort=accuracy&size=2`를 사용했고 호출마다 12초 제한을 적용했다. REST 키와 인증 헤더, 원본 응답은 기록하지 않았다. 이미지 다운로드, 개인 데이터 전송, OAuth, SMTP 호출도 없었다. 공식 사양의 대상 매핑은 TITLE→`title`, AUTHOR→`person`, ISBN→`isbn`이다. [카카오 Daum 책 검색 REST API](https://developers.kakao.com/docs/ko/daum-search/dev-guide#search-book)
+
+| 검색 | 페이지 | HTTP | 반환 수 | total_count | is_end |
+|---|---:|---:|---:|---:|---|
+| TITLE 소년이 온다 | 1 | 200 | 2 | 20 | false |
+| TITLE 소년이 온다 | 2 | 200 | 2 | 20 | false |
+| AUTHOR 한강 | 1 | 200 | 2 | 182 | false |
+| ISBN 9788936434120 | 1 | 200 | 1 | 1 | true |
+| TITLE zzznospoempty20261128 | 1 | 200 | 0 | 0 | true |
+
+실제 응답에서 공백으로 구분된 ISBN10·ISBN13 쌍과 ISBN10의 `X` 체크디지트를 관찰했다. 예를 들어 ISBN 검색 결과는 `8936434128 9788936434120`이었다. 검색 순위의 품질, 요청별 지연, `pageable_count` 및 개별 서지 필드 값은 실호출 기록에 수집하지 않았다. DTO 매핑, ISBN 정규화, 상류 오류·형식 오류·시간 초과는 루프백 Mock 테스트 범위다. 초기 샌드박스 연결 실패는 공급자 HTTP 오류에 포함하지 않았다.
+
+### 프론트 요청 흐름
+
+1. `GET /api/v1/books/search?query=소년이%20온다&type=TITLE&bookType=BOOK`에서 선택한 검색 결과의 임시 `bookId`로 `GET /api/v1/books/{bookId}` 상세를 연다. 검색 커서는 불투명 값이며 같은 필터를 유지한다. 빈 페이지에서도 `hasNext=true`이면 다음 커서를 사용할 수 있다. 웹소설 회차는 `GET /api/v1/books/{bookId}/structure`로 조회한다. 최근 검색 이력은 기존 API를 사용한다.
+2. 활성 세션과 필수 약관 동의 상태에서 `Authorization: Bearer <token>`, `Content-Type: application/json`과 함께 `POST /api/v1/me/shelf`를 호출한다.
+
+   ```json
+   {"bookId":"c33ad170-c37b-4a91-a906-273635d5abc6","position":{"unit":"PAGE","value":20}}
+   ```
+
+3. 201 응답의 `data.book.bookId`로 화면 상태와 캐시 키를 교체한다. 아래는 응답에서 사용되는 필드의 일부다. 이후 도서 상세, 서재 목록·상세·삭제, 진도 및 Wiki·AI는 영구 UUID로 연결한다. 서재 삭제는 204 빈 본문이다.
+
+   ```json
+   {"data":{"book":{"bookId":"a01f1d26-5597-4ac4-889b-e60634a2ea34","title":"소년이 온다","isbn":"9788936434120","authors":[],"publisher":null,"coverUrl":null},"currentPosition":{"unit":"PAGE","value":20},"progressPercent":null}}
+   ```
+
+4. `GET /api/v1/me/shelf/{영구 UUID}/progress`의 `ETag`를 따옴표까지 보존해 `PATCH`의 `If-Match`로 전송한다. 본문은 `{"position":{"unit":"PAGE","value":30}}`이며 성공하면 응답 ETag와 진도를 함께 반영한다. 최초 20은 독서량에 포함되지 않고 30으로 증가하면 `addedUnits=10`과 `recordId`가 반환된다. 같은 위치는 기존 ETag, `addedUnits=0`, `recordId=null`을 반환한다.
+5. 기록은 `GET /api/v1/me/reading/records`, 현재 책은 `GET /api/v1/me/reading/current`, 기간 요약은 `GET /api/v1/me/reading/summary?from=2026-11-28&to=2026-11-28`, 캘린더는 `GET /api/v1/me/reading/calendar?month=2026-11`로 조회한다. Asia/Seoul 날짜별 최고 진도 증가분을 PAGE와 EPISODE로 따로 집계한다. 활동 없는 날짜는 0·`hasActivity=false`이며 서재에서 제거해도 기존 기록은 남는다.
+
+### 오류 및 화면 표시
+
+백엔드 공통 오류는 `{"error":{"code":"RESOURCE_NOT_FOUND","message":"요청을 처리할 수 없습니다.","details":[]},"meta":{"requestId":"<UUID>"}}` 형식이다. 화면 분기는 HTTP 상태와 `error.code`를 함께 사용한다.
+
+| 상태·코드 | 화면 처리 |
+|---|---|
+| 401 `INVALID_CREDENTIALS` | 세션 갱신 또는 로그인으로 연결 |
+| 403 `TERMS_RECONSENT_REQUIRED` | 필수 약관 재동의로 연결 |
+| 서재 등록 404 `RESOURCE_NOT_FOUND` | 임시 검색 결과에서 시작한 경우 재검색·재선택 안내. 캐시 만료·축출·재시작·인스턴스 변경 외에 대상 부재 및 ISBN·출처 불일치도 같은 코드. 영구 UUID 상세·진도에서 받은 404는 서재 상태를 갱신 |
+| 서재 등록 409 `SHELF_ALREADY_EXISTS` | 중복 등록 상태로 처리하고 서재 목록에서 영구 UUID 확인 |
+| 422 `INVALID_POSITION` | PAGE/EPISODE 단위와 입력값 확인 |
+| 진도 PATCH 428 `PRECONDITION_REQUIRED` | GET으로 ETag를 확보한 후 요청 |
+| 진도 PATCH 412 `VERSION_MISMATCH` | 최신 진도·ETag로 갱신하고 사용자의 변경 의도를 확인 |
+| 검색 503 `BOOK_PROVIDER_UNAVAILABLE` | 일시적인 검색 장애 표시. 성공한 빈 결과는 200 |
+
+신규 영구 카카오 판본에는 제목과 ISBN이 유지된다. 상세의 저자는 `[]`, 출판사·표지·출간일·소개·전체 분량은 `null`이다. 서재 및 현재 책에는 `BookSummary` 필드만 포함되며 표지와 출판사는 `null`이다. 미확인 분량의 `progressPercent=null`은 진행률 바를 숨기고 현재 페이지를 표시한다. 표지는 기본 이미지, 저자·출판사의 빈 값은 생략 처리한다. 현재 책이 비어 있으면 `data.item=null`이다. 검색 화면에 표시된 임시 메타데이터의 장기 보관·재표시 범위는 카카오 답변 대기 중이다. [NOSPO 문의 및 공식 답변](https://devtalk.kakao.com/t/daum-api/153062/2)
+
+### CORS와 Wiki·AI
+
+진도 경로의 MockMvc preflight는 테스트 Origin `http://localhost:3000`에서 `Authorization, Content-Type, If-Match`를 허용하고, GET 응답은 `ETag`를 노출한다. `If-Match` 허용 범위는 진도 경로다. API CORS는 명시된 Origin과 credentials를 허용한다. Book의 본인 API는 Bearer 인증을 사용하며 쿠키 기반 인증 호출에는 기존 credentials·Origin·CSRF 정책을 적용한다. 실제 프론트 Origin 및 배포 브라우저 확인은 남았다.
+
+공용 타입은 `:book:contract`에 있다. `BookCatalog.find`는 `book_edition.book_id`로 영구 판본을 반환한다. `ReadingProgressCatalog.activeProgress(memberId, bookId)`는 활성 회원의 활성 서재로 범위를 제한한다. 호출자 인증을 마친 다음 스포일러 상한에 `currentPosition`과 단위 PAGE/EPISODE를 사용한다. 로컬 원격 추적 브랜치의 Wiki 어댑터가 해당 포트를 호출하고 AI가 Wiki 경유의 현재 위치를 소비하는 코드를 확인했다. Book V12/V13, Wiki V14/V17 및 조건부 V18, AI V15/V16의 파일 번호가 겹치지 않는다. 현재 읽기 브랜치에서 Wiki·AI 통합 컴파일과 실행은 미검증이다.
+
+Wiki와 AI의 분량 상한 검사는 `totalUnits=null`을 허용한다. V18은 Wiki와 Wiki 초안에 `book_edition.book_id` FK를 추가한다. 병합 검증에서는 Book 통합 소스셋 활성화, 기존 Wiki 행의 영구 판본 참조 및 현재 진도를 뒤로 옮긴 뒤의 스포일러 상한을 확인한다.
+
+### 변경 범위
+
+Swagger의 영구 판본·서재·진도에서 실제로 null을 반환하는 필드의 스키마를 보완했고, 서재 등록의 요청·응답 예시에서 임시·영구 UUID를 구분했다. 기존 루프백 사용자 흐름 테스트에 검색 상세, 최소 영구 판본, 서재·홈의 누락 필드와 Swagger 검증을 추가했다. API v2.1 원본, Flyway V12/V13, ERD는 유지했다.
+
+최근 검색 이력은 `GET /api/v1/me/search-history`, `DELETE /api/v1/me/search-history/{historyId}`, `DELETE /api/v1/me/search-history` 계약을 유지한다.
+
+### 회귀 결과와 미확인 범위
+
+- H2 Book·서재·키 미설정 36건과 루프백 카카오 어댑터 21건이 통과했다. 신규 판본의 임시 상세, 201 영구 UUID 교체, ISBN 중복 방지, 실패 롤백, 캐시 만료·축출, 소유자 인증, 진도·기록·통계·CORS 및 OpenAPI 스키마를 확인했다.
+- MySQL 8.4.7 Testcontainers에서 Book·서재·마이그레이션 선별 36건이 통과했다. V11/V12에서 V13으로 업그레이드한 뒤 Book ERD와 대조했다. 선별 테스트의 실패·오류·스킵은 각각 0건이다.
+- 전체 Gradle `test`는 Docker 가동 후 1,508건을 실행해 1,507건 통과, 1건 실패, 스킵 0건이었다. 실패 원인은 테스트 실행 디렉터리에 Book ERD 파일 사본을 배치하지 않은 것이었다. 사본을 배치한 MySQL 선별 재검증에서 해당 검사까지 통과했다. 소스 ERD는 그대로 유지했다.
+- 테스트는 클래스패스 설정과 별도 작업 디렉터리에서 수행했다. DB는 H2 메모리와 루프백 MySQL Testcontainers만 사용했다. 파기·메일·카카오 정리 워커는 비활성화했다. 기존 H2 Refresh·탈퇴 잠금 경합은 이번 전체 회귀에서 재현되지 않았고 Known Issue로 유지한다.
+- 마감 전 실제 프론트 Origin의 브라우저 흐름과 Wiki·AI 병합 빌드를 확인해야 한다. 실호출에서 수집하지 않은 상세 응답 필드와 요청별 지연, 신규 영구 판본의 추가 서지정보 보관 정책은 남은 확인 항목이다.
+
 시작·종료 브랜치는 `feat/reading`, HEAD는 `cd7f0335f3028c24d7b738fe9200f2f55a5ce66b`다. 결과 보고서는 미추적 상태이며 Git add·commit·push를 실행하지 않았다.
