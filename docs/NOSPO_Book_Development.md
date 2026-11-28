@@ -407,3 +407,11 @@ Swagger의 영구 판본·서재·진도에서 실제로 null을 반환하는 �
 - 마감 전 실제 프론트 Origin의 브라우저 흐름과 Wiki·AI 병합 빌드를 확인해야 한다. 실호출에서 수집하지 않은 상세 응답 필드와 요청별 지연, 신규 영구 판본의 추가 서지정보 보관 정책은 남은 확인 항목이다.
 
 시작·종료 브랜치는 `feat/reading`, HEAD는 `cd7f0335f3028c24d7b738fe9200f2f55a5ce66b`다. 결과 보고서는 미추적 상태이며 Git add·commit·push를 실행하지 않았다.
+
+## Book 1~4 및 Identity·Notice 최종 전체 회귀
+
+2026-11-28, `feat/reading`의 `5b882809c2b1e7809a73f77310124a4065e4d378`에서 필터 없이 전체 Gradle `test`를 재실행했다. `BUILD SUCCESSFUL`까지 11분 48초가 걸렸다. 이번 실행의 JUnit XML 35개 기준으로 1,508건 전부 통과했다. H2 662건, MySQL Testcontainers 788건, DB 미사용 58건이며 실패·오류·스킵은 각각 0건이다.
+
+별도 작업 디렉터리의 ERD 사본은 SHA-256 및 UTF-8 JSON 파싱으로 확인했다. 이전 실행의 ERD 사본 누락은 재현되지 않았고 Book·Notice ERD 대조, V1~V13 적용과 Book 업그레이드 테스트가 통과했다. 연결 기록은 H2 메모리와 루프백 MySQL Testcontainers에 한정됐다. 실제 DB 및 외부 API·SMTP를 사용하지 않았다.
+
+Book 검색·서재·진도·기록·홈, 카카오 도서 Mock, Identity, Notice 및 Swagger 회귀가 통과했다. H2 Refresh·탈퇴 잠금 경합은 이번 실행에서 재현되지 않았다. Wiki·AI 병합 및 실제 프론트 브라우저 연동은 이번 범위 밖이다. 소스 수정 없이 결과 문서만 갱신했다.
