@@ -10,13 +10,18 @@ import kr.nospo.wiki.application.WikiStore.*;
 public interface WikiWorkflowStore {
     record Review(Submission submission, Draft draft, long revision, String comment, Integer rewardAmount,
                   String rewardReason, UUID rewardTransactionId, Integer publishedVersion) {}
+    record ReviewSummary(UUID id, UUID bookId, ReviewStatus status, Instant submittedAt, Instant decidedAt,
+                         Integer rewardAmount, UUID parentSubmissionId) {}
+    record AssetLocation(UUID bookId, UUID draftId) {}
     record Activity(UUID id, UUID memberId, UUID bookId, UUID draftId, UUID submissionId, String action,
                     UUID actorId, String comment, Integer rewardAmount, String rewardReason, Instant occurredAt) {}
     record Replay(String fingerprint, String response) {}
     record Asset(UUID id, UUID bookId, UUID draftId, int width, int height, byte[] bytes) {}
 
-    Optional<Review> review(UUID id, boolean lock);
-    List<Review> reviews(UUID member, UUID book, ReviewStatus status, DraftCursor cursor, int limit);
+    record ReviewOwner(UUID draftId, UUID memberId) {}
+    Optional<ReviewOwner> reviewOwner(UUID id);
+    Optional<Review> review(UUID id, UUID member, boolean lock);
+    List<ReviewSummary> reviews(UUID member, UUID book, ReviewStatus status, DraftCursor cursor, int limit);
     boolean submitDraft(Draft draft);
     void decide(UUID id, ReviewStatus status, Instant now, String comment, Integer amount,
                 String reason, UUID rewardTransaction, Integer version);
@@ -34,7 +39,8 @@ public interface WikiWorkflowStore {
 
     void insertAsset(Asset asset);
     Optional<Asset> asset(UUID id);
-    List<String> ownedSnapshots(UUID member, UUID book);
+    Optional<AssetLocation> assetLocation(UUID id);
+    List<Draft> draftsReferencing(UUID member, UUID book, UUID asset);
     void removeAsset(UUID draft, UUID id);
     void publishAsset(UUID draft, UUID id);
 }

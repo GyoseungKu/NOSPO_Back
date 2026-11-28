@@ -2,6 +2,8 @@ package kr.nospo.nospo_backend.wiki;
 
 import java.time.Instant;
 import java.util.UUID;
+import java.util.Collections;
+import java.util.HashMap;
 
 import kr.nospo.credit.application.AiCreditService;
 import kr.nospo.credit.application.AiCreditLedger;
@@ -56,18 +58,31 @@ class WikiCreditIntegration {
 
         public Page transactions(UUID member, String type, Instant from, Instant to, String cursor, int limit) {
             var page = target.transactions(member, type, from, to, cursor, limit);
-            return new Page(page.items().stream().map(this::withSubmission).toList(), page.nextCursor(), page.hasNext());
+            var grants = page.items().stream().filter(row -> "GRANT".equals(row.type()))
+                    .map(row -> id(row.transactionId())).toArray();
+            if (grants.length == 0) return page;
+            var submissions = new HashMap<UUID, UUID>();
+            String parameters = String.join(",", Collections.nCopies(grants.length, "?"));
+            db.query("SELECT reward_transaction_id,submission_id FROM wiki_submission WHERE reward_transaction_id IN ("
+                            + parameters + ")", row -> {
+                        submissions.put(uuid(row.getBytes(1)), uuid(row.getBytes(2)));
+                    }, grants);
+            return new Page(page.items().stream().map(row -> withSubmission(row, submissions.get(row.transactionId())))
+                    .toList(), page.nextCursor(), page.hasNext());
         }
 
-        public Transaction transaction(UUID member, UUID id) { return withSubmission(target.transaction(member, id)); }
-
-        private Transaction withSubmission(Transaction row) {
+        public Transaction transaction(UUID member, UUID id) {
+            var row = target.transaction(member, id);
             if (!"GRANT".equals(row.type())) return row;
             var submission = db.query("SELECT submission_id FROM wiki_submission WHERE reward_transaction_id=?",
                     (result, index) -> uuid(result.getBytes(1)), id(row.transactionId())).stream().findFirst();
-            return submission.map(value -> new Transaction(row.transactionId(), row.type(), row.amount(),
-                    row.balanceAfter(), row.reason(), row.jobId(), value, row.originalTransactionId(), row.createdAt()))
-                    .orElse(row);
+            return withSubmission(row, submission.orElse(null));
+        }
+
+        private static Transaction withSubmission(Transaction row, UUID submission) {
+            if (submission == null) return row;
+            return new Transaction(row.transactionId(), row.type(), row.amount(), row.balanceAfter(),
+                    row.reason(), row.jobId(), submission, row.originalTransactionId(), row.createdAt());
         }
     }
 }

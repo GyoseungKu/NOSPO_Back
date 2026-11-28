@@ -55,10 +55,10 @@ public class WikiReviews {
 
     public JsonNode submit(UUID member, UUID draftId, String tag, UUID key) {
         workflow.lockMember(member);
-        drafts.find(member, draftId);
+        var requested = drafts.find(member, draftId);
+        drafts.scope().resolve(member, requested.bookId(), requested.position());
         return replay(member, "submit:" + draftId, key, draftId, "", () -> {
             var draft = drafts.editable(member, draftId, tag);
-            drafts.scope().resolve(member, draft.bookId(), draft.position());
             var content = drafts.snapshot(draft.snapshot());
             if (!content.path("conflicts").isEmpty()) throw new ApiException(409, "WIKI_VERSION_CONFLICT");
             if (content.path("characters").isEmpty() && content.path("organizations").isEmpty()) throw invalid();
@@ -76,13 +76,13 @@ public class WikiReviews {
         if (admin) requireAdmin(member);
         validateLimit(limit);
         var rows = workflow.reviews(admin ? null : member, book, status, decode(cursor), limit + 1);
-        return page(rows, limit, WikiReviews::summary, row -> encode(row.submission().submittedAt(), row.submission().id()));
+        return page(rows, limit, row -> new Summary(row.id(), row.bookId(), row.status(), row.submittedAt(),
+                row.decidedAt(), row.rewardAmount(), row.parentSubmissionId()), row -> encode(row.submittedAt(), row.id()));
     }
 
     public Details details(UUID member, UUID id, boolean admin) {
         if (admin) requireAdmin(member);
-        var review = review(id, false);
-        if (!admin) requireOwner(member, review);
+        var review = workflow.review(id, admin ? null : member, false).orElseThrow(WikiDrafts::missing);
         return new Details(detail(review, admin), review.revision());
     }
 
@@ -155,15 +155,14 @@ public class WikiReviews {
 
     public Revision revision(UUID member, UUID id) {
         workflow.lockMember(member);
-        var review = review(id, true);
-        requireOwner(member, review);
+        var review = workflow.review(id, member, true).orElseThrow(WikiDrafts::missing);
         if (review.submission().status() != ReviewStatus.CHANGES_REQUESTED)
             throw new ApiException(409, "REVIEW_ALREADY_DECIDED");
         var existingId = workflow.revisionDraft(id);
         if (existingId.isPresent()) {
             Draft existing = drafts.find(member, existingId.get());
             if (existing.status() != DraftStatus.DRAFT) throw new ApiException(409, "DRAFT_NOT_EDITABLE");
-            return new Revision(drafts.detail(existing), false);
+            return new Revision(drafts.detail(member, existing.id()), false);
         }
         var original = review.draft();
         var position = drafts.scope().resolve(member, original.bookId(), original.position());
@@ -279,7 +278,8 @@ public class WikiReviews {
 
     private ObjectNode detail(Review review, boolean admin) {
         ObjectNode node = json.valueToTree(summary(review));
-        var snapshot = drafts.snapshot(review.submission().snapshot());
+        var snapshot = admin ? drafts.snapshot(review.submission().snapshot())
+                : drafts.readableSnapshot(review.draft(), review.submission().snapshot());
         snapshot.remove("baseIds");
         snapshot.remove("copiedThrough");
         node.set("snapshot", snapshot);
@@ -313,8 +313,8 @@ public class WikiReviews {
 
     private UUID lockReviewMembers(UUID actor, UUID id) {
         requireAdmin(actor);
-        Draft draft = review(id, false).draft();
-        UUID owner = draft.memberId();
+        var target = workflow.reviewOwner(id).orElseThrow(WikiDrafts::missing);
+        UUID owner = target.memberId();
         if (actor.toString().compareTo(owner.toString()) < 0) {
             workflow.lockMember(actor);
             workflow.lockMember(owner);
@@ -323,7 +323,7 @@ public class WikiReviews {
             if (!actor.equals(owner)) workflow.lockMember(actor);
         }
         requireAdmin(actor);
-        return draft.id();
+        return target.draftId();
     }
 
     private Review editable(UUID id, String tag) {
@@ -344,11 +344,7 @@ public class WikiReviews {
                 .orElseThrow(WikiDrafts::missing).snapshot());
     }
 
-    private Review review(UUID id, boolean lock) { return workflow.review(id, lock).orElseThrow(WikiDrafts::missing); }
-
-    private static void requireOwner(UUID member, Review review) {
-        if (!member.equals(review.draft().memberId())) throw missing();
-    }
+    private Review review(UUID id, boolean lock) { return workflow.review(id, null, lock).orElseThrow(WikiDrafts::missing); }
 
     private void requireAdmin(UUID member) {
         if (!workflow.administrator(member)) throw new ApiException(403, "FORBIDDEN");

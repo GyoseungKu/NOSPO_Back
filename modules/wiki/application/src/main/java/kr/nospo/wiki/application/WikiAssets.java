@@ -9,14 +9,12 @@ import kr.nospo.support.ApiException;
 import kr.nospo.wiki.application.WikiDrafts.Edit;
 import kr.nospo.wiki.application.WikiWorkflowStore.Asset;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import static kr.nospo.wiki.application.WikiDrafts.*;
 
 @Service
-@Transactional
 public class WikiAssets {
     private final WikiDrafts drafts;
     private final WikiWorkflowStore store;
@@ -64,13 +62,31 @@ public class WikiAssets {
     }
 
     public Asset image(UUID member, UUID assetId, Integer position) {
-        var asset = store.asset(assetId).orElseThrow(WikiDrafts::missing);
-        if (store.administrator(member)) return asset;
-        for (String payload : store.ownedSnapshots(member, asset.bookId())) {
-            for (JsonNode item : drafts.snapshot(payload).path("assets"))
-                if (assetId.toString().equals(item.path("assetId").asString())) return asset;
+        var asset = store.assetLocation(assetId).orElseThrow(WikiDrafts::missing);
+        if (store.administrator(member)) return load(assetId);
+        if (asset.draftId() != null) {
+            var draft = drafts.find(member, asset.draftId());
+            if (referenced(drafts.readableSnapshot(draft, draft.snapshot()), assetId)) return load(assetId);
+            throw missing();
         }
-        if (asset.draftId() == null && wiki.assetVisible(member, asset.bookId(), assetId, position)) return asset;
+        if (position == null) {
+            for (var draft : store.draftsReferencing(member, asset.bookId(), assetId)) {
+                try {
+                    if (referenced(drafts.readableSnapshot(draft, draft.snapshot()), assetId)) return load(assetId);
+                } catch (ApiException denied) {
+                    if (denied.status() != 403) throw denied;
+                }
+            }
+        }
+        if (wiki.assetVisible(member, asset.bookId(), assetId, position)) return load(assetId);
         throw missing();
+    }
+
+    private Asset load(UUID assetId) { return store.asset(assetId).orElseThrow(WikiDrafts::missing); }
+
+    private static boolean referenced(JsonNode content, UUID asset) {
+        for (JsonNode item : content.path("assets"))
+            if (asset.toString().equals(item.path("assetId").asString())) return true;
+        return false;
     }
 }

@@ -59,8 +59,12 @@ public class JdbcWikiStore implements WikiStore {
     }
 
     @Override
-    public List<Draft> drafts(UUID memberId, UUID bookId, DraftCursor after, int limit) {
-        String sql = "SELECT * FROM wiki_draft WHERE member_id=? AND status='DRAFT'";
+    public List<DraftSummary> drafts(UUID memberId, UUID bookId, DraftCursor after, int limit) {
+        String sql = """
+                SELECT draft_id,book_id,mode,status,position_unit,position_value,base_wiki_version,
+                    parent_submission_id,revision,updated_at
+                FROM wiki_draft WHERE member_id=? AND status='DRAFT'
+                """;
         var args = new ArrayList<Object>();
         args.add(id(memberId));
         if (bookId != null) {
@@ -74,7 +78,12 @@ public class JdbcWikiStore implements WikiStore {
             args.add(id(after.id()));
         }
         args.add(limit);
-        return db.query(sql + " ORDER BY updated_at DESC,draft_id DESC LIMIT ?", DRAFT, args.toArray());
+        return db.query(sql + " ORDER BY updated_at DESC,draft_id DESC LIMIT ?", (r, n) -> new DraftSummary(
+                uuid(r.getBytes("draft_id")), uuid(r.getBytes("book_id")), Mode.valueOf(r.getString("mode")),
+                DraftStatus.valueOf(r.getString("status")),
+                new Position(Unit.valueOf(r.getString("position_unit")), r.getInt("position_value")),
+                r.getObject("base_wiki_version", Integer.class), uuid(r.getBytes("parent_submission_id")),
+                r.getLong("revision"), r.getTimestamp("updated_at").toInstant()), args.toArray());
     }
 
     @Override

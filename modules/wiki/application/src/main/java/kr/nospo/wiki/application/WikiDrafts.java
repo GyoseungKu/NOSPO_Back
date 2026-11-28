@@ -102,7 +102,10 @@ public class WikiDrafts {
                 draft.id(), null, action, draft.memberId(), null, null, null, now()));
     }
 
-    public Detail detail(UUID member, UUID id) { return detail(find(member, id)); }
+    public Detail detail(UUID member, UUID id) {
+        var draft = find(member, id);
+        return detail(draft, readableSnapshot(draft, draft.snapshot()));
+    }
 
     public Page list(UUID member, UUID book, String cursor, int limit) {
         if (limit < 1 || limit > 100) throw invalid();
@@ -136,7 +139,8 @@ public class WikiDrafts {
     }
 
     public JsonNode character(UUID member, UUID id, UUID entityId, String kind) {
-        return lookup(snapshot(find(member, id).snapshot()).path(kind), "entityId", entityId);
+        var draft = find(member, id);
+        return lookup(readableSnapshot(draft, draft.snapshot()).path(kind), "entityId", entityId);
     }
 
     public Edit addCharacter(UUID member, UUID id, String tag, Position first, ProfileInput input, String kind) {
@@ -408,12 +412,33 @@ public class WikiDrafts {
 
     public static String etag(long revision) { return "\"" + revision + "\""; }
 
-    Detail detail(Draft draft) {
-        var data = snapshot(draft.snapshot());
+    Detail detail(Draft draft) { return detail(draft, snapshot(draft.snapshot())); }
+
+    private Detail detail(Draft draft, ObjectNode data) {
         return new Detail(draft.id(), draft.bookId(), draft.mode(), draft.status(), draft.position(),
                 draft.baseWikiVersion(), draft.parentSubmissionId(), draft.revision(), draft.updatedAt(),
                 data.path("characters"), data.path("organizations"), data.path("relations"), data.path("assets"),
                 data.has("conflicts") ? data.get("conflicts") : json.createArrayNode());
+    }
+
+    private static Summary summary(DraftSummary draft) {
+        return new Summary(draft.id(), draft.bookId(), draft.mode(), draft.status(), draft.position(),
+                draft.baseWikiVersion(), draft.parentSubmissionId(), draft.revision(), draft.updatedAt());
+    }
+
+    ObjectNode readableSnapshot(Draft draft, String payload) {
+        var content = snapshot(payload);
+        if (draft.mode() == Mode.UPDATE) {
+            var current = scope().resolve(draft.memberId(), draft.bookId(), null);
+            if (draft.position().unit() != current.unit()) throw new ApiException(403, "SPOILER_SCOPE_EXCEEDED");
+            if (current.value() < draft.position().value()) {
+                restrictCopy(content, current);
+                var conflicts = snapshotArray(content, "conflicts");
+                for (int i = conflicts.size() - 1; i >= 0; i--)
+                    if (findItem(content, conflicts.get(i).asString()) == null) conflicts.remove(i);
+            }
+        }
+        return content;
     }
 
     private static Summary summary(Draft draft) {

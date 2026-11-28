@@ -26,7 +26,9 @@ public interface WikiStore {
     Optional<Draft> findDraft(UUID memberId, UUID draftId);
 
     record DraftCursor(Instant updatedAt, UUID id) {}
-    List<Draft> drafts(UUID memberId, UUID bookId, DraftCursor after, int limit);
+    record DraftSummary(UUID id, UUID bookId, Mode mode, DraftStatus status, Position position,
+                        Integer baseWikiVersion, UUID parentSubmissionId, long revision, Instant updatedAt) {}
+    List<DraftSummary> drafts(UUID memberId, UUID bookId, DraftCursor after, int limit);
     boolean saveDraft(Draft draft, long expectedRevision);
     boolean deleteDraft(UUID memberId, UUID draftId, long expectedRevision);
     Optional<PublishedVersion> findVersion(UUID bookId, UUID wikiId, int version);

@@ -148,6 +148,9 @@ class WikiBookAiIntegrationTests {
                 """, Integer.class, id(book))).isOne();
         mvc.perform(get("/api/v1/me/ai/credit-transactions/" + text(granted, "rewardTransactionId")).with(as(reader)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.submissionId").value(submission.toString()));
+        mvc.perform(get("/api/v1/me/ai/credit-transactions").with(as(reader)).param("type", "GRANT"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items[0].submissionId").value(submission.toString()));
         assertThat(db.queryForObject("SELECT balance FROM credit_wallet WHERE member_id=?", Integer.class, id(reader))).isEqualTo(7);
 
         db.update("UPDATE book_progress SET current_value=20 WHERE book_id=? AND member_id=?", id(book), id(reader));

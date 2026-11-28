@@ -35,19 +35,37 @@ class JdbcWikiWorkflow implements WikiWorkflowStore {
 
     JdbcWikiWorkflow(JdbcTemplate db) { this.db = db; }
 
-    public Optional<Review> review(UUID value, boolean lock) {
-        return db.query(REVIEW + " AND s.submission_id=?" + (lock ? " FOR UPDATE" : ""),
-                REVIEW_ROW, id(value)).stream().findFirst();
+    public Optional<ReviewOwner> reviewOwner(UUID submission) {
+        return db.query("""
+                SELECT d.draft_id,d.member_id FROM wiki_submission s JOIN wiki_draft d ON d.draft_id=s.draft_id
+                WHERE s.submission_id=?
+                """, (r, n) -> new ReviewOwner(uuid(r.getBytes(1)), uuid(r.getBytes(2))), id(submission))
+                .stream().findFirst();
     }
 
-    public List<Review> reviews(UUID member, UUID book, ReviewStatus status, DraftCursor cursor, int limit) {
-        var sql = new StringBuilder(REVIEW);
+    public Optional<Review> review(UUID value, UUID member, boolean lock) {
+        String where = member == null ? " AND s.submission_id=?" : " AND s.submission_id=? AND d.member_id=?";
+        var parameters = member == null ? new Object[] {id(value)} : new Object[] {id(value), id(member)};
+        return db.query(REVIEW + where + (lock ? " FOR UPDATE" : ""), REVIEW_ROW, parameters).stream().findFirst();
+    }
+
+    public List<ReviewSummary> reviews(UUID member, UUID book, ReviewStatus status, DraftCursor cursor, int limit) {
+        var sql = new StringBuilder("""
+                SELECT s.submission_id,d.book_id,s.status,s.submitted_at,s.decided_at,s.reward_amount,d.parent_submission_id
+                FROM wiki_submission s JOIN wiki_draft d ON d.draft_id=s.draft_id WHERE 1=1
+                """);
         var args = new ArrayList<Object>();
         if (member != null) { sql.append(" AND d.member_id=?"); args.add(id(member)); }
         if (book != null) { sql.append(" AND d.book_id=?"); args.add(id(book)); }
         if (status != null) { sql.append(" AND s.status=?"); args.add(status.name()); }
         page(sql, args, "s.submitted_at", "s.submission_id", cursor, limit);
-        return db.query(sql.toString(), REVIEW_ROW, args.toArray());
+        return db.query(sql.toString(), (r, n) -> {
+            var decided = r.getTimestamp("decided_at");
+            return new ReviewSummary(uuid(r.getBytes("submission_id")), uuid(r.getBytes("book_id")),
+                    ReviewStatus.valueOf(r.getString("status")), r.getTimestamp("submitted_at").toInstant(),
+                    decided == null ? null : decided.toInstant(), r.getObject("reward_amount", Integer.class),
+                    uuid(r.getBytes("parent_submission_id")));
+        }, args.toArray());
     }
 
     public boolean submitDraft(Draft draft) {
@@ -151,9 +169,15 @@ class JdbcWikiWorkflow implements WikiWorkflowStore {
                 r.getBytes("image_bytes")), id(asset)).stream().findFirst();
     }
 
-    public List<String> ownedSnapshots(UUID member, UUID book) {
-        return db.query("SELECT snapshot FROM wiki_draft WHERE member_id=? AND book_id=?",
-                (r, n) -> r.getString(1), id(member), id(book));
+    public Optional<AssetLocation> assetLocation(UUID asset) {
+        return db.query("SELECT book_id,draft_id FROM wiki_asset WHERE asset_id=?",
+                (r, n) -> new AssetLocation(uuid(r.getBytes(1)), uuid(r.getBytes(2))), id(asset)).stream().findFirst();
+    }
+
+    public List<Draft> draftsReferencing(UUID member, UUID book, UUID asset) {
+        return db.query("""
+                SELECT * FROM wiki_draft WHERE member_id=? AND book_id=? AND snapshot LIKE ?
+                """, JdbcWikiStore.DRAFT, id(member), id(book), "%" + asset + "%");
     }
 
     public void removeAsset(UUID draft, UUID asset) {

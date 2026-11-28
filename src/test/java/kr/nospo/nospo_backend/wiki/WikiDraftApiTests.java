@@ -126,6 +126,20 @@ class WikiDraftApiTests {
                 .andExpect(jsonPath("$.data.characters[0].profiles.length()").value(1))
                 .andExpect(jsonPath("$.data.characters[0].profiles[0].name").value("공개 이름")).andReturn();
         assertThat(data(result).path("characters").get(0).path("entityId").asString()).isNotEqualTo(character.toString());
+        String path = DRAFTS + "/" + data(result).path("draftId").asString();
+        String copied = data(result).path("characters").get(0).path("entityId").asString();
+        UUID submitKey = UUID.randomUUID();
+        String submission = data(submit(path, tag(result), submitKey)).path("submissionId").asString();
+        when(books.currentPosition(owner, book))
+                .thenReturn(Optional.of(new WikiBookAccess.Position(WikiBookAccess.Unit.EPISODE, 5)));
+        mvc.perform(get(path).with(member(owner))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.characters").isEmpty());
+        mvc.perform(get(path + "/characters/" + copied).with(member(owner))).andExpect(status().isNotFound());
+        mvc.perform(get("/api/v1/wiki/submissions/" + submission).with(member(owner))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.snapshot.characters").isEmpty());
+        mvc.perform(post(path + "/submissions").with(member(owner)).header("If-Match", tag(result))
+                        .header("Idempotency-Key", submitKey))
+                .andExpect(status().is(422)).andExpect(jsonPath("$.error.code").value("POSITION_EXCEEDS_CURRENT"));
     }
 
     @Test
@@ -187,6 +201,7 @@ class WikiDraftApiTests {
         UUID reader = UUID.randomUUID();
         when(books.currentPosition(reader, book))
                 .thenReturn(Optional.of(new WikiBookAccess.Position(WikiBookAccess.Unit.EPISODE, 20)));
+        mvc.perform(get(assetPath).with(member(owner)).param("positionValue", "20")).andExpect(status().isNotFound());
         mvc.perform(get(assetPath).with(member(reader))).andExpect(status().isNotFound());
         when(books.currentPosition(reader, book))
                 .thenReturn(Optional.of(new WikiBookAccess.Position(WikiBookAccess.Unit.EPISODE, 35)));

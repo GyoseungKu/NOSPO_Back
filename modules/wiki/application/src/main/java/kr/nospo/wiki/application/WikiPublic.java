@@ -2,6 +2,8 @@ package kr.nospo.wiki.application;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Predicate;
@@ -97,15 +99,16 @@ public class WikiPublic {
         result.set("entries", entity.path("entries"));
         result.set("appliedPosition", json.valueToTree(snapshot.position()));
         result.put("wikiVersion", snapshot.version());
+        var nodes = entitiesById(snapshot);
         var relations = result.putArray("relations");
         var affiliations = result.putArray("characters".equals(kind) ? "affiliations" : "members");
         for (var relation : snapshot.content().path("relations")) {
             boolean forward = id.toString().equals(relation.path("from").path("id").asString());
             boolean reverse = id.toString().equals(relation.path("to").path("id").asString());
-            if (forward || reverse) relations.add(visibleRelation(snapshot, relation));
+            if (forward || reverse) relations.add(visibleRelation(nodes, relation));
             if ("AFFILIATION".equals(relation.path("type").asString())
                     && ("characters".equals(kind) ? forward : reverse))
-                affiliations.add(visibleRelation(snapshot, relation));
+                affiliations.add(visibleRelation(nodes, relation));
         }
         return result;
     }
@@ -117,6 +120,7 @@ public class WikiPublic {
         if (entityType != null && !List.of("CHARACTER", "ORGANIZATION").contains(entityType)) throw invalid();
         var snapshot = snapshot(book, resolve(member, book, value));
         var rows = new ArrayList<JsonNode>();
+        var nodes = entitiesById(snapshot);
         for (var relation : snapshot.content().path("relations")) {
             if (type != null && !type.equals(relation.path("type").asString())) continue;
             if (entityId != null || entityType != null) {
@@ -124,7 +128,7 @@ public class WikiPublic {
                 boolean incoming = endpoint(relation.path("to"), entityType, entityId);
                 if (!(outgoing && !"IN".equals(direction) || incoming && !"OUT".equals(direction))) continue;
             }
-            rows.add(visibleRelation(snapshot, relation));
+            rows.add(visibleRelation(nodes, relation));
         }
         return page(snapshot, rows, "relationId", cursor, limit);
     }
@@ -176,19 +180,25 @@ public class WikiPublic {
         return node;
     }
 
-    private ObjectNode visibleRelation(Snapshot snapshot, JsonNode relation) {
+    private ObjectNode visibleRelation(Map<String, JsonNode> nodes, JsonNode relation) {
         var result = json.createObjectNode().put("relationId", relation.path("relationId").asString())
                 .put("type", relation.path("type").asString());
         result.set("description", relation.get("description"));
         for (String end : List.of("from", "to")) {
             var target = relation.path(end);
-            String kind = "CHARACTER".equals(target.path("type").asString()) ? "characters" : "organizations";
-            var entity = lookup(snapshot.content().path(kind), "entityId", UUID.fromString(target.path("id").asString()));
+            var entity = nodes.get(target.path("id").asString());
             var endpoint = result.putObject(end).put("type", target.path("type").asString())
                     .put("id", target.path("id").asString());
             endpoint.set("name", entity.path("profiles").path(0).path("name"));
         }
         return result;
+    }
+
+    private static Map<String, JsonNode> entitiesById(Snapshot snapshot) {
+        var nodes = new HashMap<String, JsonNode>();
+        for (String kind : List.of("characters", "organizations"))
+            for (var entity : snapshot.content().path(kind)) nodes.put(entity.path("entityId").asString(), entity);
+        return nodes;
     }
 
     private Position resolve(UUID member, UUID book, Integer value) {
