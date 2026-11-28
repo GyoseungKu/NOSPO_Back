@@ -306,3 +306,31 @@ Authorization: Bearer <accessToken>
 카카오 신규 판본 저장 차단 및 Book 3 ETag/CORS를 유지했다. 실제 카카오 도서 API와 국립중앙도서관 API는 미검증 상태이며 국립중앙도서관 어댑터는 이번 작업에 포함하지 않았다. 기존 H2 Refresh·탈퇴 잠금 경합은 Known Issue로 남긴다.
 
 첫 Book 4 표적 테스트 8건과 선별 회귀 210건이 통과했다. 전체 프로젝트 Gradle 테스트는 1,500건 통과, 실패·오류·스킵 각 0건이었다. 전체 실행은 H2 658건, MySQL Testcontainers 784건, DB 없는 테스트 58건을 포함했다. 실제 DB 및 외부 서비스에는 접속하지 않았다. 세부 내역은 [Book 4단계 결과 보고서](Terms_Reconsent_Analysis.md)에 기록했다.
+
+## Book 2.5 후속 — 카카오 선택 도서 영구 등록 활성화
+
+### 정책과 영구 저장 범위
+
+카카오 담당자는 사용자가 검색 후 직접 선택한 책의 최소 서지정보를 공용 판본에 저장하고, 회원 서재·진도·기록에서 장기 참조하는 NOSPO 문의 사례에 대해 이용 가능하다고 답했다. 일반 검색 결과의 일시 캐시는 과도한 쿼리 소모 방지를 위한 단시간 캐시로 안내했다. [NOSPO 문의 및 공식 답변](https://devtalk.kakao.com/t/daum-api/153062/2), [관련 캐시 문의](https://devtalk.kakao.com/t/api/152911), [관련 데이터 이용 문의](https://devtalk.kakao.com/t/api-daum-search/152062)
+
+- 사용자 선택과 유효한 카카오 임시 판본이 모두 확인된 서재 등록 트랜잭션에서만 신규 생성한다. 판본은 내부 UUID, 출처 `KAKAO_DAUM`, canonical ISBN13인 `source_item_id`와 `isbn`, 정규화된 제목, 필수 유형 `BOOK/PAGE`로 저장한다. 저자는 빈 배열로 반환한다. 저자·출판사·출간일·표지의 영구 저장·재표시는 추가 확인 전까지 보류한다. 소개, 이미지 파일, 외부 응답 원문은 저장 대상에서 제외한다.
+- 제공자 응답의 모호하거나 유효하지 않은 ISBN은 거부한다. 같은 판본을 가리키는 ISBN10/ISBN13은 동일 ISBN13으로 변환한다. 출처·식별자 유일 제약으로 동시 등록에서도 기존 UUID를 재사용하고 기존 제목과 메타데이터를 덮어쓰지 않는다. 기존 판본의 ISBN이 충돌하면 404로 종료한다.
+- 신규 판본 생성과 개인 진도·서재 등록은 기존 회원 잠금 및 활성 세션 재검증을 포함한 READ COMMITTED 트랜잭션에서 수행한다. 검색은 임시 캐시를 사용하며 V12/V13 스키마로 처리한다.
+- 요청 ID는 현재 인스턴스의 기존 5분 캐시와 HMAC 파생값으로 확인한다. 만료·축출·재시작·인스턴스 간 캐시 불일치·미확인 ID는 `404 RESOURCE_NOT_FOUND`를 반환한다. 다시 검색하면 새로 조회한 결과를 선택할 수 있다.
+- Wiki·AI는 `BookCatalog.find(영구 UUID)`와 `ReadingProgressCatalog.activeProgress(memberId, bookId)`를 사용한다. 스포일러 상한은 `currentPosition`이다. 카카오 원본 메타데이터를 AI 입력으로 사용하지 않는 기존 팀 계약을 적용한다.
+
+### 프론트 연동
+
+`GET /api/v1/books/search?query=...&type=TITLE&bookType=BOOK`의 `bookId`로 기존 `POST /api/v1/me/shelf`에 `{"bookId":"<검색 결과 UUID>","position":{"unit":"PAGE","value":20}}`를 전달한다. 웹소설은 기존 `EPISODE`를 사용한다. 로그인과 필수 약관 동의가 필요하다. 201의 `data.book.bookId`로 화면 상태를 교체하고 이후 서재·상세·진도에서 이 영구 ID를 사용한다. 임시 UUID를 장기 보관하면 캐시가 사라진 뒤 재등록할 수 없다. 404 시 재검색, 409는 이미 등록, 422는 지점 검증 오류다. 영구 상세의 `authors=[]`, 출판사·표지 등 미보관 필드의 `null`, 미상의 `progressPercent=null`을 화면에서 처리한다.
+
+진도 GET의 ETag를 PATCH의 If-Match에 전달한다. 최초 20페이지 등록은 독서량 0이고, 30페이지로 수정하면 +10이다. 삭제 뒤 35페이지로 재등록하면 +5를 한 번 반영한다. 기록과 홈 요약·캘린더는 같은 Asia/Seoul 날짜 집계를 사용한다.
+
+### 통합 검증
+
+선별 검증 75건이 통과했다. H2 서재 27건, MySQL 8.4.7 Testcontainers 서재 27건, 루프백 HTTP 카카오 어댑터 21건이다. 실패·오류·스킵은 각각 0건이다. 검색만으로 영구 판본이 생성되지 않고, 선택되지 않은 항목과 검증 불가 요청은 저장되지 않음을 확인했다. 두 회원의 동일 ISBN 동시 요청은 한 판본을 공유했으며, 판본·진도·서재 쓰기 단계별 오류를 주입해 모든 부분 쓰기가 롤백되는지 검증했다. 잔존 기록·회원별 통계·ETag 불일치 처리와 캐시 만료 후의 영구 상세 조회도 확인했다.
+
+테스트 JVM은 루트 외 별도 작업 디렉터리와 클래스패스 설정으로 실행했다. DB·Flyway·Gradle·JVM·Docker 설정 상속을 사전 점검했고, Flyway 로그는 H2 인메모리와 Testcontainers의 루프백 MySQL만 확인했다. 파기·메일·카카오 정리 워커는 테스트 설정에서 비활성화했다. 카카오 도서 API는 가짜 키와 루프백 Mock으로 검증했다. 실제 카카오 도서 API·OAuth·SMTP 호출과 실제 DB 접속은 없었다.
+
+전체 Gradle `test`는 20분 9초에 완료되었다. 1,508건 모두 통과했으며 H2 662건, MySQL Testcontainers 788건, DB 미사용 58건이다. 실패·오류·스킵은 각각 0건이었다. Book 1~4, Identity(카카오 OAuth·재동의·탈퇴·복구·파기 포함), Notice, Swagger 및 현 브랜치의 Flyway·ERD 검증을 포함한다. 기존 H2 Refresh·탈퇴 잠금 경합은 이번 실행에서 관찰되지 않았으며 Known Issue로 남긴다. 실제 카카오 REST 연동과 미보관 필드의 정책 확인은 후속 범위다.
+
+시작·종료 브랜치는 `feat/reading`, HEAD는 `cd7f0335f3028c24d7b738fe9200f2f55a5ce66b`다. 결과 보고서는 미추적 상태이며 Git add·commit·push를 실행하지 않았다.

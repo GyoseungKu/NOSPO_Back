@@ -24,10 +24,7 @@ class TransientBookCatalog {
     }
 
     Book publish(String source, EditionMetadata edition) {
-        byte[] key = Arrays.copyOf(secrets.fingerprint("book:transient:v1:" + source + ":" + edition.sourceItemId()), 16);
-        key[6] = (byte) ((key[6] & 0x0f) | 0x80);
-        key[8] = (byte) ((key[8] & 0x3f) | 0x80);
-        UUID bookId = SqlIds.uuid(key);
+        UUID bookId = temporaryId(source, edition.sourceItemId());
         var book = new Book(bookId, null, BookType.BOOK, edition.title(), edition.authors(), edition.publisher(),
                 edition.editionLabel(), edition.isbn(), edition.coverUrl(), edition.description(),
                 source, edition.sourceItemId(), PositionUnit.PAGE, edition.totalUnits(), edition.publicationDate());
@@ -37,6 +34,17 @@ class TransientBookCatalog {
 
     Optional<Book> find(UUID bookId) {
         return Optional.ofNullable(cache.get(bookId));
+    }
+
+    Optional<Book> findSelected(UUID bookId) {
+        return find(bookId).filter(book -> bookId.equals(temporaryId(book.source(), book.sourceItemId())));
+    }
+
+    private UUID temporaryId(String source, String sourceItemId) {
+        byte[] key = Arrays.copyOf(secrets.fingerprint("book:transient:v1:" + source + ":" + sourceItemId), 16);
+        key[6] = (byte) ((key[6] & 0x0f) | 0x80);
+        key[8] = (byte) ((key[8] & 0x3f) | 0x80);
+        return SqlIds.uuid(key);
     }
 
     @Scheduled(fixedDelay = 60_000)

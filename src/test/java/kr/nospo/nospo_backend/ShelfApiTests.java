@@ -3,7 +3,6 @@ package kr.nospo.nospo_backend;
 import static kr.nospo.support.SqlIds.*;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.when;
-import static org.mockito.Mockito.doReturn;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -14,8 +13,10 @@ import java.util.UUID;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicReference;
 import kr.nospo.book.application.BookSearchProvider;
+import kr.nospo.book.application.BookStore;
 import kr.nospo.book.application.EditionMetadata;
-import kr.nospo.book.application.KakaoShelfStoragePolicy;
+import kr.nospo.book.contract.BookCatalog;
+import kr.nospo.book.integration.KakaoLoopback;
 import kr.nospo.book.contract.SearchType;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -49,7 +50,8 @@ class ShelfApiTests {
     @Autowired JwtEncoder encoder;
     @Autowired FixtureClock time;
     @MockitoBean BookSearchProvider provider;
-    @MockitoSpyBean KakaoShelfStoragePolicy kakaoPolicy;
+    @Autowired BookCatalog bookCatalog;
+    @MockitoSpyBean BookStore bookStore;
     @MockitoSpyBean kr.nospo.book.application.ShelfStore shelfStore;
 
     @TestConfiguration
@@ -269,7 +271,7 @@ class ShelfApiTests {
         var data = data(mvc.perform(get(BOOKS + "/search").param("query", "fixture").param("type", "TITLE")
                 .param("bookType", "BOOK")).andExpect(status().isOk()));
         UUID temp = UUID.fromString(data.path("items").get(0).path("bookId").asString());
-        error(add(owner, temp, "PAGE", 0), 404, "RESOURCE_NOT_FOUND");
+        assertThat(catalogRows(isbn)).isZero();
         assertThat(db.queryForObject("SELECT COUNT(*) FROM book_edition WHERE book_id=?", Integer.class, id(temp))).isZero();
         UUID permanent = edition("BOOK", "Approved", null);
         db.update("UPDATE book_edition SET source='KAKAO_DAUM',source_item_id=?,isbn=? WHERE book_id=?",
@@ -286,9 +288,8 @@ class ShelfApiTests {
     }
 
     @Test
-    void rejectsInvalidIdentityAndConflictingApprovedMetadataEvenWhenCreationIsAllowed() throws Exception {
+    void rejectsInvalidIdentityAndConflictingApprovedMetadata() throws Exception {
         var owner = member(true);
-        doReturn(true).when(kakaoPolicy).allowsSharedEditionCreation();
         String isbn = "9780804429573";
         UUID conflicting = edition("BOOK", "Conflicting ISBN", null);
         db.update("UPDATE book_edition SET source='KAKAO_DAUM',source_item_id=?,isbn=? WHERE book_id=?",
@@ -298,6 +299,8 @@ class ShelfApiTests {
                 new EditionMetadata("9780306406158", "Bad checksum", List.of(), null, null, "9780306406158",
                         null, null, null, null),
                 new EditionMetadata("missing", "No ISBN", List.of(), null, null, null, null, null, null, null),
+                new EditionMetadata("ambiguous", "Ambiguous ISBN", List.of(), null, null,
+                        isbn + " 9780306406157", null, null, null, null),
                 new EditionMetadata("mismatch", "Wrong source key", List.of(), null, null, isbn, null, null, null, null))) {
             error(add(owner, cachedEdition(candidate), "PAGE", 0), 404, "RESOURCE_NOT_FOUND");
             assertThat(catalogRows(candidate.sourceItemId())).isEqualTo(candidate.sourceItemId().equals(isbn) ? 1 : 0);
@@ -307,7 +310,7 @@ class ShelfApiTests {
     }
 
     @Test
-    void testOnlyApprovalCreatesOneMinimalEditionAndKeepsItAcrossRequests() throws Exception {
+    void concurrentSelectionCreatesOneMinimalEditionAndKeepsItAcrossRequests() throws Exception {
         var owner = member(true);
         var other = member(true);
         var failed = member(true);
@@ -315,9 +318,7 @@ class ShelfApiTests {
         var external = new EditionMetadata(isbn, "Selected title", List.of("External author"), "External press",
                 "External label", isbn, "https://example.test/cover", "External synopsis", 123, LocalDate.of(2020, 1, 1));
         UUID temporary = cachedEdition(external);
-        error(add(owner, temporary, "PAGE", 20), 404, "RESOURCE_NOT_FOUND");
         assertThat(catalogRows(isbn)).isZero();
-        doReturn(true).when(kakaoPolicy).allowsSharedEditionCreation();
         error(add(failed, temporary, "EPISODE", 20), 422, "INVALID_POSITION");
         assertThat(catalogRows(isbn)).isZero();
         assertThat(db.queryForObject("SELECT COUNT(*) FROM book_progress WHERE member_id=?", Integer.class, id(failed.id())))
@@ -359,12 +360,130 @@ class ShelfApiTests {
     }
 
     @Test
+    void selectedHttpResultFlowsThroughShelfProgressRecordsAndHome() throws Exception {
+        var owner = member(true);
+        var other = member(true);
+        String day = time.instant().atZone(ZoneId.of("Asia/Seoul")).toLocalDate().toString();
+        String isbn = "9780439064873";
+        String unselectedIsbn = "9780439136365";
+        try (var kakao = new KakaoLoopback("""
+                {"meta":{"total_count":2,"pageable_count":2,"is_end":true},"documents":[
+                  {"title":"Selected HTTP book","isbn":"0439064872 9780439064873","authors":["External author"],
+                   "publisher":"External press","thumbnail":"https://example.test/cover",
+                   "contents":"External summary","datetime":"2000-01-01T00:00:00.000+09:00"},
+                  {"title":"Unselected HTTP book","isbn":"9780439136365","authors":[]}
+                ]}
+                """)) {
+            var adapter = kakao.provider(json, time);
+            when(provider.source()).thenReturn(adapter.source());
+            when(provider.transientResults()).thenReturn(adapter.transientResults());
+            when(provider.search("loopback", SearchType.TITLE, null, 20))
+                    .thenAnswer(ignored -> adapter.search("loopback", SearchType.TITLE, null, 20));
+            var found = data(mvc.perform(get(BOOKS + "/search").param("query", "loopback").param("type", "TITLE")
+                    .param("bookType", "BOOK")).andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.items.length()").value(2))
+                    .andExpect(jsonPath("$.data.items[0].authors[0]").value("External author")));
+            UUID temporary = UUID.fromString(found.path("items").get(0).path("bookId").asString());
+            assertThat(bookCatalog.find(temporary)).isEmpty();
+            assertThat(catalogRows(isbn)).isZero();
+            assertThat(catalogRows(unselectedIsbn)).isZero();
+            error(add(owner, new UUID(temporary.getMostSignificantBits(), temporary.getLeastSignificantBits() ^ 1),
+                    "PAGE", 20), 404, "RESOURCE_NOT_FOUND");
+            error(add(member(false), temporary, "PAGE", 20), 403, "TERMS_RECONSENT_REQUIRED");
+            assertThat(catalogRows(isbn)).isZero();
+            var created = data(mvc.perform(add(owner, temporary, "PAGE", 20)).andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.data.progressPercent").value(org.hamcrest.Matchers.nullValue())));
+            UUID permanent = UUID.fromString(created.path("book").path("bookId").asString());
+            assertThat(permanent).isNotEqualTo(temporary);
+            assertThat(bookCatalog.find(permanent)).hasValueSatisfying(book -> assertThat(book.isbn()).isEqualTo(isbn));
+            assertThat(catalogRows(isbn)).isOne();
+            assertThat(catalogRows(unselectedIsbn)).isZero();
+            mvc.perform(get(BOOKS + "/" + permanent)).andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.title").value("Selected HTTP book"))
+                    .andExpect(jsonPath("$.data.isbn").value(isbn))
+                    .andExpect(jsonPath("$.data.authors").isEmpty())
+                    .andExpect(jsonPath("$.data.publisher").value(org.hamcrest.Matchers.nullValue()))
+                    .andExpect(jsonPath("$.data.coverUrl").value(org.hamcrest.Matchers.nullValue()));
+            mvc.perform(get(SHELF).header("Authorization", owner.bearer())).andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.items[0].book.bookId").value(permanent.toString()));
+            mvc.perform(detail(owner, permanent)).andExpect(status().isOk());
+            assertThat(records(owner, permanent)).isZero();
+            expectPages(owner, day, 0);
+            error(progressGet(other, permanent), 404, "RESOURCE_NOT_FOUND");
+            mvc.perform(add(other, temporary, "PAGE", 4)).andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.data.book.bookId").value(permanent.toString()));
+            error(add(owner, temporary, "PAGE", 20), 409, "SHELF_ALREADY_EXISTS");
+            String first = progressTag(owner, permanent, 0);
+            String next = etag(move(owner, permanent, first, "PAGE", 30).andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.addedUnits").value(10))
+                    .andExpect(jsonPath("$.data.recordId").isString()));
+            assertThat(next).isNotEqualTo(first);
+            error(progressPatch(owner, permanent, """
+                    {"position":{"unit":"PAGE","value":40}}
+                    """).header("If-Match", first), 412, "VERSION_MISMATCH");
+            mvc.perform(recordList(owner)).andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.items[0].addedUnits").value(10));
+            mvc.perform(recordList(other)).andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.items").isEmpty());
+            mvc.perform(home(owner, "current")).andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.item.book.bookId").value(permanent.toString()));
+            expectPages(owner, day, 10);
+            mvc.perform(remove(owner, permanent)).andExpect(status().isNoContent());
+            expectPages(owner, day, 10);
+            mvc.perform(add(owner, temporary, "PAGE", 35)).andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.data.highestPosition.value").value(35));
+            assertThat(records(owner, permanent)).isEqualTo(2);
+            expectPages(owner, day, 15);
+            expectPages(other, day, 0);
+            time.now.updateAndGet(t -> t.plusSeconds(301));
+            error(add(member(true), temporary, "PAGE", 0), 404, "RESOURCE_NOT_FOUND");
+            mvc.perform(get(BOOKS + "/" + permanent)).andExpect(status().isOk());
+            kakao.assertSingleSearch();
+        }
+    }
+
+    private void expectPages(Member member, String day, int pages) throws Exception {
+        var summary = data(mvc.perform(home(member, "summary").param("from", day).param("to", day))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.pages").value(pages)));
+        var calendar = data(mvc.perform(home(member, "calendar").param("month", day.substring(0, 7)))
+                .andExpect(status().isOk()));
+        assertThat(calendar.path("days").get(Integer.parseInt(day.substring(8)) - 1))
+                .isEqualTo(summary.path("daily").get(0));
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"edition", "progress", "shelf"})
+    void rollsBackNewEditionAndProgressIfInsertFails(String stage) throws Exception {
+        var owner = member(true);
+        String isbn = "9780134685991";
+        UUID temporary = cachedEdition(new EditionMetadata(isbn, "Rollback fixture", List.of(),
+                null, null, isbn, null, null, null, null));
+        var failure = org.mockito.Mockito.doThrow(new kr.nospo.support.ApiException(409, "REQUEST_IN_PROGRESS"));
+        switch (stage) {
+            case "edition" -> failure.when(bookStore).storeEdition(org.mockito.ArgumentMatchers.isNull(),
+                    org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq("KAKAO_DAUM"),
+                    org.mockito.ArgumentMatchers.any());
+            case "progress" -> failure.when(shelfStore).insertProgress(org.mockito.ArgumentMatchers.eq(owner.id()),
+                    org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+            case "shelf" -> failure.when(shelfStore).attach(org.mockito.ArgumentMatchers.eq(owner.id()),
+                    org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+            default -> throw new AssertionError(stage);
+        }
+
+        error(add(owner, temporary, "PAGE", 20), 409, "REQUEST_IN_PROGRESS");
+        assertThat(catalogRows(isbn)).isZero();
+        for (String table : List.of("book_shelf", "book_progress", "book_reading_record")) {
+            assertThat(db.queryForObject("SELECT COUNT(*) FROM " + table + " WHERE member_id=?",
+                    Integer.class, id(owner.id()))).isZero();
+        }
+    }
+
+    @Test
     void anEvictedTemporaryIdCannotCreateAnEdition() throws Exception {
         var owner = member(true);
         String isbn = "9790000000001";
         UUID temporary = cachedEdition(new EditionMetadata(isbn, "Evicted", List.of(), null, null, isbn,
                 null, null, null, null));
-        doReturn(true).when(kakaoPolicy).allowsSharedEditionCreation();
         for (int batch = 0; batch < 11; batch++) {
             String query = "eviction-" + batch;
             var rows = java.util.stream.IntStream.range(batch * 100, (batch + 1) * 100)

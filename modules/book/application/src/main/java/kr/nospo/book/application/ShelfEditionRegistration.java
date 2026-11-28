@@ -1,11 +1,11 @@
 package kr.nospo.book.application;
 
-import java.util.List;
+import static kr.nospo.book.application.KakaoShelfStoragePolicy.SOURCE;
+
 import java.util.UUID;
 import kr.nospo.book.contract.Book;
 import kr.nospo.book.contract.BookCatalog;
 import kr.nospo.book.contract.BookType;
-import kr.nospo.book.contract.PositionUnit;
 import kr.nospo.support.ApiException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -13,8 +13,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 class ShelfEditionRegistration {
-    private static final String SOURCE = "KAKAO_DAUM";
-
     private final BookCatalog catalog;
     private final BookStore books;
     private final TransientBookCatalog transientBooks;
@@ -34,22 +32,13 @@ class ShelfEditionRegistration {
     }
 
     private Book resolveCached(UUID requestedId) {
-        Book cached = transientBooks.find(requestedId).orElseThrow(ShelfEditionRegistration::notFound);
-        String isbn = BookIsbn.canonical(cached.isbn());
-        String title = cached.title() == null ? "" : BookNames.query(cached.title());
-        if (!SOURCE.equals(cached.source()) || cached.bookType() != BookType.BOOK
-                || cached.positionUnit() != PositionUnit.PAGE || isbn == null || !isbn.equals(cached.sourceItemId())
-                || title.isEmpty()) {
-            throw notFound();
-        }
+        var minimal = transientBooks.findSelected(requestedId).flatMap(policy::selectedEdition)
+                .orElseThrow(ShelfEditionRegistration::notFound);
+        String isbn = minimal.isbn();
 
         var existing = books.findBySource(SOURCE, isbn);
         if (existing.isPresent()) return matching(existing.get(), isbn);
 
-        if (!policy.allowsSharedEditionCreation()) throw notFound();
-
-        // Only the title required by V12 and the source/ISBN identity are candidates for this path.
-        var minimal = new EditionMetadata(isbn, title, List.of(), null, null, isbn, null, null, null, null);
         UUID permanentId = books.storeEdition(null, BookType.BOOK, SOURCE, minimal);
         return matching(catalog.find(permanentId).orElseThrow(ShelfEditionRegistration::notFound), isbn);
     }

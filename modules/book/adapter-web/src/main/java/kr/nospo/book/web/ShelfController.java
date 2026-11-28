@@ -57,15 +57,15 @@ public class ShelfController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @Operation(summary = "내 서재에 판본 등록", description = "최초 등록은 독서량에 추가되지 않습니다. "
-            + "카카오 임시 ID는 유효한 캐시와 같은 출처·ISBN의 승인 판본이 있을 때 연결됩니다. "
-            + "캐시를 찾을 수 없으면 다시 검색하세요. 승인 판본이 없으면 현재 저장 정책에 따라 404로 실패합니다. "
+            + "유효한 카카오 검색 결과를 선택하면 출처·ISBN으로 기존 영구 판본을 찾거나 최소 정보로 생성합니다. "
+            + "임시 ID가 만료되었거나 다른 서버의 캐시에만 있으면 다시 검색하세요. "
             + "이후 상세·진도 조회에는 201 응답의 book.bookId를 사용하세요. 활성 세션과 필수 약관 동의가 필요합니다.",
             responses = {@ApiResponse(responseCode = "201", description = "등록 완료", useReturnTypeSchema = true,
                     content = @Content(mediaType = "application/json", examples = @ExampleObject(value = SHELF_EXAMPLE))),
                 @ApiResponse(responseCode = "400", description = "잘못된 JSON 또는 판본 UUID"),
                 @ApiResponse(responseCode = "401", description = "인증 또는 세션 오류"),
                 @ApiResponse(responseCode = "403", description = "재동의 또는 Origin 제한"),
-                @ApiResponse(responseCode = "404", description = "RESOURCE_NOT_FOUND. 임시 캐시가 없거나 승인 판본을 확인할 수 없음"),
+                @ApiResponse(responseCode = "404", description = "RESOURCE_NOT_FOUND. 판본 또는 유효한 임시 캐시가 없거나 ISBN과 출처를 검증할 수 없음"),
                 @ApiResponse(responseCode = "409", description = "SHELF_ALREADY_EXISTS 또는 쓰기 경합"),
                 @ApiResponse(responseCode = "422", description = "INVALID_POSITION")})
     public kr.nospo.support.ApiResponse<ShelfItem> add(@AuthenticationPrincipal Jwt jwt,
