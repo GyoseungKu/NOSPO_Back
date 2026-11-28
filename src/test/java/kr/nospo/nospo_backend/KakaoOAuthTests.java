@@ -658,6 +658,11 @@ class KakaoOAuthTests extends EmailSignupTests {
 
     @Test
     void settingsRejectUnsafeRedirectUrisAndAllowOnlyExplicitLocalHttp() {
+        assertThatThrownBy(() -> new KakaoOAuthSettings("", "https://web.example/callback", List.of("/"), true))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("KAKAO_REDIRECT_URI");
+        assertThatThrownBy(() -> new KakaoOAuthSettings("https://api.example/api/v1/auth/kakao/callback",
+                "/auth/kakao/callback", List.of("/"), true))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("KAKAO_FRONTEND_CALLBACK");
         for (String uri : List.of("https://api.example/callback?x=1", "https://user@api.example/api/v1/auth/kakao/callback",
                 "http://api.example/api/v1/auth/kakao/callback", "https://api.example/api/../callback"))
             assertThatThrownBy(() -> new KakaoOAuthSettings(uri, "https://web.example/callback", List.of("/"), true))

@@ -18,25 +18,34 @@ public class KakaoOAuthSettings {
             @Value("${nospo.auth.kakao.frontend-callback}") String frontendCallback,
             @Value("${nospo.auth.kakao.return-paths}") List<String> returnPaths,
             @Value("${nospo.auth.secure-cookie:true}") boolean secureCookie) {
-        validateUri(redirectUri, secureCookie);
-        validateUri(frontendCallback, secureCookie);
-        if (!URI.create(redirectUri).getPath().equals("/api/v1/auth/kakao/callback"))
-            throw new IllegalArgumentException("Invalid Kakao callback path");
+        URI callback = validateUri("KAKAO_REDIRECT_URI", redirectUri, secureCookie);
+        validateUri("KAKAO_FRONTEND_CALLBACK", frontendCallback, secureCookie);
+        if (!"/api/v1/auth/kakao/callback".equals(callback.getPath()))
+            throw new IllegalArgumentException("KAKAO_REDIRECT_URI must end with /api/v1/auth/kakao/callback");
         if (returnPaths.isEmpty() || returnPaths.stream().anyMatch(p -> !safePath(p)))
-            throw new IllegalArgumentException("Explicit relative Kakao return paths required");
+            throw new IllegalArgumentException("KAKAO_RETURN_PATHS must list allowed relative paths");
         this.redirectUri = redirectUri;
         this.frontendCallback = frontendCallback;
         this.returnPaths = List.copyOf(returnPaths);
     }
 
-    private static void validateUri(String value, boolean secure) {
-        URI uri = URI.create(value);
-        boolean local = List.of("localhost", "127.0.0.1", "[::1]").contains(uri.getHost());
-        if (uri.getHost() == null || uri.getUserInfo() != null || uri.getQuery() != null
+    private static URI validateUri(String setting, String value, boolean secure) {
+        if (value == null || value.isBlank())
+            throw new IllegalArgumentException(setting + " must be configured");
+        URI uri;
+        try {
+            uri = URI.create(value);
+        } catch (IllegalArgumentException invalid) {
+            throw new IllegalArgumentException(setting + " must be a valid callback URL");
+        }
+        String host = uri.getHost();
+        boolean local = "localhost".equals(host) || "127.0.0.1".equals(host) || "[::1]".equals(host);
+        if (host == null || uri.getUserInfo() != null || uri.getQuery() != null
                 || uri.getFragment() != null || !uri.normalize().equals(uri)
                 || !("https".equals(uri.getScheme())
                     || (!secure && local && "http".equals(uri.getScheme()))))
-            throw new IllegalArgumentException("Kakao redirects require HTTPS (local HTTP only with insecure cookies)");
+            throw new IllegalArgumentException(setting + " requires an absolute HTTPS URL (loopback HTTP only with insecure cookies)");
+        return uri;
     }
 
     private static boolean safePath(String path) {
