@@ -82,6 +82,14 @@ project(':account-lifecycle:adapter-worker').projectDir = file('modules/account-
 include ':notice'
 project(':notice').projectDir = file('modules/notice')
 
+include ':book'
+project(':book').projectDir = file('modules/book')
+
+['contract', 'application', 'adapter-persistence', 'adapter-web', 'adapter-integration'].each { name ->
+    include ":book:${name}"
+    project(":book:${name}").projectDir = file("modules/book/${name}")
+}
+
 ['contract', 'application', 'adapter-persistence', 'adapter-web'].each { name ->
     include ":notice:${name}"
     project(":notice:${name}").projectDir = file("modules/notice/${name}")

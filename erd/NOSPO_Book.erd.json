@@ -1,0 +1,1108 @@
+{
+  "$schema": "https://raw.githubusercontent.com/dineug/erd-editor/main/json-schema/schema.json",
+  "version": "3.0.0",
+  "settings": {
+    "originX": 25,
+    "originY": 25,
+    "zoomLevel": 0.75,
+    "show": 2023,
+    "database": 4,
+    "databaseName": "NOSPO Book",
+    "canvasType": "ERD",
+    "language": 32,
+    "tableNameCase": 8,
+    "columnNameCase": 8,
+    "bracketType": 8,
+    "relationshipDataTypeSync": true,
+    "columnOrder": [
+      1,
+      2,
+      4,
+      8,
+      16,
+      32,
+      64
+    ],
+    "maxWidthComment": 160,
+    "lockSettings": 63
+  },
+  "doc": {
+    "tableIds": [
+      "t_book_work",
+      "t_book_edition",
+      "t_book_author",
+      "t_book_episode",
+      "t_book_search_history",
+      "t_member",
+      "t_book_progress",
+      "t_book_shelf",
+      "t_book_reading_record"
+    ],
+    "relationshipIds": [
+      "fk_book_edition_work",
+      "fk_book_author_edition",
+      "fk_book_episode_edition",
+      "fk_book_search_history_member",
+      "fk_book_progress_member",
+      "fk_book_progress_edition",
+      "fk_book_shelf_progress",
+      "fk_book_record_progress"
+    ],
+    "indexIds": [
+      "uq_book_edition_source",
+      "uq_book_episode_sequence",
+      "uq_book_search_history_query",
+      "ix_book_edition_type_id",
+      "ix_book_edition_type_isbn",
+      "ix_book_search_history_order",
+      "ix_book_progress_activity",
+      "ix_book_shelf_added",
+      "ix_book_record_time",
+      "ix_book_record_edition"
+    ],
+    "memoIds": [
+      "m_book",
+      "m_shelf"
+    ],
+    "tableGroupIds": []
+  },
+  "collections": {
+    "tableEntities": {
+      "t_book_work": {
+        "id": "t_book_work",
+        "name": "book_work",
+        "comment": "?? ? ?? ??? ??? ???? ??",
+        "columnIds": [
+          "t_book_work__work_id"
+        ],
+        "ui": {
+          "x": 60,
+          "y": 220,
+          "color": "#2563eb"
+        }
+      },
+      "t_book_edition": {
+        "id": "t_book_edition",
+        "name": "book_edition",
+        "comment": "???? ?? ?? UUID ? ?? ??",
+        "columnIds": [
+          "t_book_edition__book_id",
+          "t_book_edition__work_id",
+          "t_book_edition__book_type",
+          "t_book_edition__title",
+          "t_book_edition__publisher",
+          "t_book_edition__edition_label",
+          "t_book_edition__isbn",
+          "t_book_edition__isbn_key",
+          "t_book_edition__cover_url",
+          "t_book_edition__description",
+          "t_book_edition__source",
+          "t_book_edition__source_item_id",
+          "t_book_edition__total_units",
+          "t_book_edition__publication_date"
+        ],
+        "ui": {
+          "x": 420,
+          "y": 220,
+          "color": "#2563eb"
+        }
+      },
+      "t_book_author": {
+        "id": "t_book_author",
+        "name": "book_author",
+        "comment": "??? ?? ?? ??",
+        "columnIds": [
+          "t_book_author__book_id",
+          "t_book_author__author_order",
+          "t_book_author__author_name"
+        ],
+        "ui": {
+          "x": 830,
+          "y": 220,
+          "color": "#2563eb"
+        }
+      },
+      "t_book_episode": {
+        "id": "t_book_episode",
+        "name": "book_episode",
+        "comment": "?? ? ??? ???? ??? ?????",
+        "columnIds": [
+          "t_book_episode__episode_id",
+          "t_book_episode__book_id",
+          "t_book_episode__sequence_no",
+          "t_book_episode__episode_label",
+          "t_book_episode__volume_label",
+          "t_book_episode__chapter_label"
+        ],
+        "ui": {
+          "x": 830,
+          "y": 480,
+          "color": "#2563eb"
+        }
+      },
+      "t_book_search_history": {
+        "id": "t_book_search_history",
+        "name": "book_search_history",
+        "comment": "??? ?? ??. ?? ???? ?? ?? ? ?? ??",
+        "columnIds": [
+          "t_book_search_history__history_id",
+          "t_book_search_history__member_id",
+          "t_book_search_history__query_text",
+          "t_book_search_history__query_key",
+          "t_book_search_history__search_type",
+          "t_book_search_history__searched_at"
+        ],
+        "ui": {
+          "x": 420,
+          "y": 740,
+          "color": "#2563eb"
+        }
+      },
+      "t_member": {
+        "id": "t_member",
+        "name": "member",
+        "comment": "Identity ?? ?? ???. Book FK? ??? PK? ??",
+        "columnIds": [
+          "t_member__member_id"
+        ],
+        "ui": {
+          "x": 60,
+          "y": 740,
+          "color": "#64748b"
+        }
+      },
+      "t_book_progress": {
+        "id": "t_book_progress",
+        "name": "book_progress",
+        "comment": "?????? ?? ??? revision",
+        "columnIds": [
+          "t_book_progress__member_id",
+          "t_book_progress__book_id",
+          "t_book_progress__current_value",
+          "t_book_progress__highest_value",
+          "t_book_progress__last_progress_at",
+          "t_book_progress__revision"
+        ],
+        "ui": {
+          "x": 420,
+          "y": 1030,
+          "color": "#0f766e"
+        }
+      },
+      "t_book_shelf": {
+        "id": "t_book_shelf",
+        "name": "book_shelf",
+        "comment": "?? ??? ??? ?????",
+        "columnIds": [
+          "t_book_shelf__member_id",
+          "t_book_shelf__book_id",
+          "t_book_shelf__added_at"
+        ],
+        "ui": {
+          "x": 60,
+          "y": 1030,
+          "color": "#0f766e"
+        }
+      },
+      "t_book_reading_record": {
+        "id": "t_book_reading_record",
+        "name": "book_reading_record",
+        "comment": "??? ?? ? ?? ?? ??",
+        "columnIds": [
+          "t_book_reading_record__record_id",
+          "t_book_reading_record__member_id",
+          "t_book_reading_record__book_id",
+          "t_book_reading_record__from_value",
+          "t_book_reading_record__to_value",
+          "t_book_reading_record__added_units",
+          "t_book_reading_record__recorded_at"
+        ],
+        "ui": {
+          "x": 820,
+          "y": 1030,
+          "color": "#0f766e"
+        }
+      }
+    },
+    "tableColumnEntities": {
+      "t_book_work__work_id": {
+        "id": "t_book_work__work_id",
+        "tableId": "t_book_work",
+        "name": "work_id",
+        "comment": "",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 10
+      },
+      "t_book_edition__book_id": {
+        "id": "t_book_edition__book_id",
+        "tableId": "t_book_edition",
+        "name": "book_id",
+        "comment": "",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 10
+      },
+      "t_book_edition__work_id": {
+        "id": "t_book_edition__work_id",
+        "tableId": "t_book_edition",
+        "name": "work_id",
+        "comment": "",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 0
+      },
+      "t_book_edition__book_type": {
+        "id": "t_book_edition__book_type",
+        "tableId": "t_book_edition",
+        "name": "book_type",
+        "comment": "",
+        "dataType": "VARCHAR(16)",
+        "default": "",
+        "options": 8
+      },
+      "t_book_edition__title": {
+        "id": "t_book_edition__title",
+        "tableId": "t_book_edition",
+        "name": "title",
+        "comment": "",
+        "dataType": "VARCHAR(512)",
+        "default": "",
+        "options": 8
+      },
+      "t_book_edition__publisher": {
+        "id": "t_book_edition__publisher",
+        "tableId": "t_book_edition",
+        "name": "publisher",
+        "comment": "",
+        "dataType": "VARCHAR(512)",
+        "default": "",
+        "options": 0
+      },
+      "t_book_edition__edition_label": {
+        "id": "t_book_edition__edition_label",
+        "tableId": "t_book_edition",
+        "name": "edition_label",
+        "comment": "",
+        "dataType": "VARCHAR(255)",
+        "default": "",
+        "options": 0
+      },
+      "t_book_edition__isbn": {
+        "id": "t_book_edition__isbn",
+        "tableId": "t_book_edition",
+        "name": "isbn",
+        "comment": "",
+        "dataType": "VARCHAR(32)",
+        "default": "",
+        "options": 0
+      },
+      "t_book_edition__isbn_key": {
+        "id": "t_book_edition__isbn_key",
+        "tableId": "t_book_edition",
+        "name": "isbn_key",
+        "comment": "",
+        "dataType": "VARCHAR(32)",
+        "default": "",
+        "options": 0
+      },
+      "t_book_edition__cover_url": {
+        "id": "t_book_edition__cover_url",
+        "tableId": "t_book_edition",
+        "name": "cover_url",
+        "comment": "",
+        "dataType": "VARCHAR(2048)",
+        "default": "",
+        "options": 0
+      },
+      "t_book_edition__description": {
+        "id": "t_book_edition__description",
+        "tableId": "t_book_edition",
+        "name": "description",
+        "comment": "",
+        "dataType": "TEXT",
+        "default": "",
+        "options": 0
+      },
+      "t_book_edition__source": {
+        "id": "t_book_edition__source",
+        "tableId": "t_book_edition",
+        "name": "source",
+        "comment": "",
+        "dataType": "VARCHAR(64)",
+        "default": "",
+        "options": 8
+      },
+      "t_book_edition__source_item_id": {
+        "id": "t_book_edition__source_item_id",
+        "tableId": "t_book_edition",
+        "name": "source_item_id",
+        "comment": "",
+        "dataType": "VARBINARY(768)",
+        "default": "",
+        "options": 8
+      },
+      "t_book_edition__total_units": {
+        "id": "t_book_edition__total_units",
+        "tableId": "t_book_edition",
+        "name": "total_units",
+        "comment": "",
+        "dataType": "INT",
+        "default": "",
+        "options": 0
+      },
+      "t_book_edition__publication_date": {
+        "id": "t_book_edition__publication_date",
+        "tableId": "t_book_edition",
+        "name": "publication_date",
+        "comment": "",
+        "dataType": "DATE",
+        "default": "",
+        "options": 0
+      },
+      "t_book_author__book_id": {
+        "id": "t_book_author__book_id",
+        "tableId": "t_book_author",
+        "name": "book_id",
+        "comment": "",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 10
+      },
+      "t_book_author__author_order": {
+        "id": "t_book_author__author_order",
+        "tableId": "t_book_author",
+        "name": "author_order",
+        "comment": "",
+        "dataType": "INT",
+        "default": "",
+        "options": 10
+      },
+      "t_book_author__author_name": {
+        "id": "t_book_author__author_name",
+        "tableId": "t_book_author",
+        "name": "author_name",
+        "comment": "",
+        "dataType": "VARCHAR(512)",
+        "default": "",
+        "options": 8
+      },
+      "t_book_episode__episode_id": {
+        "id": "t_book_episode__episode_id",
+        "tableId": "t_book_episode",
+        "name": "episode_id",
+        "comment": "",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 10
+      },
+      "t_book_episode__book_id": {
+        "id": "t_book_episode__book_id",
+        "tableId": "t_book_episode",
+        "name": "book_id",
+        "comment": "",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 8
+      },
+      "t_book_episode__sequence_no": {
+        "id": "t_book_episode__sequence_no",
+        "tableId": "t_book_episode",
+        "name": "sequence_no",
+        "comment": "",
+        "dataType": "INT",
+        "default": "",
+        "options": 8
+      },
+      "t_book_episode__episode_label": {
+        "id": "t_book_episode__episode_label",
+        "tableId": "t_book_episode",
+        "name": "episode_label",
+        "comment": "",
+        "dataType": "VARCHAR(255)",
+        "default": "",
+        "options": 8
+      },
+      "t_book_episode__volume_label": {
+        "id": "t_book_episode__volume_label",
+        "tableId": "t_book_episode",
+        "name": "volume_label",
+        "comment": "",
+        "dataType": "VARCHAR(255)",
+        "default": "",
+        "options": 0
+      },
+      "t_book_episode__chapter_label": {
+        "id": "t_book_episode__chapter_label",
+        "tableId": "t_book_episode",
+        "name": "chapter_label",
+        "comment": "",
+        "dataType": "VARCHAR(255)",
+        "default": "",
+        "options": 0
+      },
+      "t_book_search_history__history_id": {
+        "id": "t_book_search_history__history_id",
+        "tableId": "t_book_search_history",
+        "name": "history_id",
+        "comment": "",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 10
+      },
+      "t_book_search_history__member_id": {
+        "id": "t_book_search_history__member_id",
+        "tableId": "t_book_search_history",
+        "name": "member_id",
+        "comment": "",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 8
+      },
+      "t_book_search_history__query_text": {
+        "id": "t_book_search_history__query_text",
+        "tableId": "t_book_search_history",
+        "name": "query_text",
+        "comment": "",
+        "dataType": "VARCHAR(100)",
+        "default": "",
+        "options": 8
+      },
+      "t_book_search_history__query_key": {
+        "id": "t_book_search_history__query_key",
+        "tableId": "t_book_search_history",
+        "name": "query_key",
+        "comment": "",
+        "dataType": "BINARY(32)",
+        "default": "",
+        "options": 8
+      },
+      "t_book_search_history__search_type": {
+        "id": "t_book_search_history__search_type",
+        "tableId": "t_book_search_history",
+        "name": "search_type",
+        "comment": "",
+        "dataType": "VARCHAR(8)",
+        "default": "",
+        "options": 8
+      },
+      "t_book_search_history__searched_at": {
+        "id": "t_book_search_history__searched_at",
+        "tableId": "t_book_search_history",
+        "name": "searched_at",
+        "comment": "",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 8
+      },
+      "t_member__member_id": {
+        "id": "t_member__member_id",
+        "tableId": "t_member",
+        "name": "member_id",
+        "comment": "",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 10
+      },
+      "t_book_progress__member_id": {
+        "id": "t_book_progress__member_id",
+        "tableId": "t_book_progress",
+        "name": "member_id",
+        "comment": "",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 10
+      },
+      "t_book_progress__book_id": {
+        "id": "t_book_progress__book_id",
+        "tableId": "t_book_progress",
+        "name": "book_id",
+        "comment": "",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 10
+      },
+      "t_book_progress__current_value": {
+        "id": "t_book_progress__current_value",
+        "tableId": "t_book_progress",
+        "name": "current_value",
+        "comment": "",
+        "dataType": "INT",
+        "default": "",
+        "options": 8
+      },
+      "t_book_progress__highest_value": {
+        "id": "t_book_progress__highest_value",
+        "tableId": "t_book_progress",
+        "name": "highest_value",
+        "comment": "",
+        "dataType": "INT",
+        "default": "",
+        "options": 8
+      },
+      "t_book_progress__last_progress_at": {
+        "id": "t_book_progress__last_progress_at",
+        "tableId": "t_book_progress",
+        "name": "last_progress_at",
+        "comment": "",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 0
+      },
+      "t_book_progress__revision": {
+        "id": "t_book_progress__revision",
+        "tableId": "t_book_progress",
+        "name": "revision",
+        "comment": "",
+        "dataType": "BIGINT",
+        "default": "",
+        "options": 8
+      },
+      "t_book_shelf__member_id": {
+        "id": "t_book_shelf__member_id",
+        "tableId": "t_book_shelf",
+        "name": "member_id",
+        "comment": "",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 10
+      },
+      "t_book_shelf__book_id": {
+        "id": "t_book_shelf__book_id",
+        "tableId": "t_book_shelf",
+        "name": "book_id",
+        "comment": "",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 10
+      },
+      "t_book_shelf__added_at": {
+        "id": "t_book_shelf__added_at",
+        "tableId": "t_book_shelf",
+        "name": "added_at",
+        "comment": "",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 8
+      },
+      "t_book_reading_record__record_id": {
+        "id": "t_book_reading_record__record_id",
+        "tableId": "t_book_reading_record",
+        "name": "record_id",
+        "comment": "",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 10
+      },
+      "t_book_reading_record__member_id": {
+        "id": "t_book_reading_record__member_id",
+        "tableId": "t_book_reading_record",
+        "name": "member_id",
+        "comment": "",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 8
+      },
+      "t_book_reading_record__book_id": {
+        "id": "t_book_reading_record__book_id",
+        "tableId": "t_book_reading_record",
+        "name": "book_id",
+        "comment": "",
+        "dataType": "BINARY(16)",
+        "default": "",
+        "options": 8
+      },
+      "t_book_reading_record__from_value": {
+        "id": "t_book_reading_record__from_value",
+        "tableId": "t_book_reading_record",
+        "name": "from_value",
+        "comment": "",
+        "dataType": "INT",
+        "default": "",
+        "options": 8
+      },
+      "t_book_reading_record__to_value": {
+        "id": "t_book_reading_record__to_value",
+        "tableId": "t_book_reading_record",
+        "name": "to_value",
+        "comment": "",
+        "dataType": "INT",
+        "default": "",
+        "options": 8
+      },
+      "t_book_reading_record__added_units": {
+        "id": "t_book_reading_record__added_units",
+        "tableId": "t_book_reading_record",
+        "name": "added_units",
+        "comment": "",
+        "dataType": "INT",
+        "default": "",
+        "options": 8
+      },
+      "t_book_reading_record__recorded_at": {
+        "id": "t_book_reading_record__recorded_at",
+        "tableId": "t_book_reading_record",
+        "name": "recorded_at",
+        "comment": "",
+        "dataType": "DATETIME(6)",
+        "default": "",
+        "options": 8
+      }
+    },
+    "relationshipEntities": {
+      "fk_book_edition_work": {
+        "id": "fk_book_edition_work",
+        "relationshipType": 4,
+        "onDelete": 32,
+        "onUpdate": 32,
+        "start": {
+          "tableId": "t_book_work",
+          "columnIds": [
+            "t_book_work__work_id"
+          ]
+        },
+        "end": {
+          "tableId": "t_book_edition",
+          "columnIds": [
+            "t_book_edition__work_id"
+          ]
+        }
+      },
+      "fk_book_author_edition": {
+        "id": "fk_book_author_edition",
+        "relationshipType": 8,
+        "onDelete": 4,
+        "onUpdate": 32,
+        "start": {
+          "tableId": "t_book_edition",
+          "columnIds": [
+            "t_book_edition__book_id"
+          ]
+        },
+        "end": {
+          "tableId": "t_book_author",
+          "columnIds": [
+            "t_book_author__book_id"
+          ]
+        }
+      },
+      "fk_book_episode_edition": {
+        "id": "fk_book_episode_edition",
+        "relationshipType": 4,
+        "onDelete": 4,
+        "onUpdate": 32,
+        "start": {
+          "tableId": "t_book_edition",
+          "columnIds": [
+            "t_book_edition__book_id"
+          ]
+        },
+        "end": {
+          "tableId": "t_book_episode",
+          "columnIds": [
+            "t_book_episode__book_id"
+          ]
+        }
+      },
+      "fk_book_search_history_member": {
+        "id": "fk_book_search_history_member",
+        "relationshipType": 4,
+        "onDelete": 4,
+        "onUpdate": 32,
+        "start": {
+          "tableId": "t_member",
+          "columnIds": [
+            "t_member__member_id"
+          ]
+        },
+        "end": {
+          "tableId": "t_book_search_history",
+          "columnIds": [
+            "t_book_search_history__member_id"
+          ]
+        }
+      },
+      "fk_book_progress_member": {
+        "id": "fk_book_progress_member",
+        "relationshipType": 4,
+        "onDelete": 4,
+        "onUpdate": 32,
+        "start": {
+          "tableId": "t_member",
+          "columnIds": [
+            "t_member__member_id"
+          ]
+        },
+        "end": {
+          "tableId": "t_book_progress",
+          "columnIds": [
+            "t_book_progress__member_id"
+          ]
+        }
+      },
+      "fk_book_progress_edition": {
+        "id": "fk_book_progress_edition",
+        "relationshipType": 4,
+        "onDelete": 32,
+        "onUpdate": 32,
+        "start": {
+          "tableId": "t_book_edition",
+          "columnIds": [
+            "t_book_edition__book_id"
+          ]
+        },
+        "end": {
+          "tableId": "t_book_progress",
+          "columnIds": [
+            "t_book_progress__book_id"
+          ]
+        }
+      },
+      "fk_book_shelf_progress": {
+        "id": "fk_book_shelf_progress",
+        "relationshipType": 8,
+        "onDelete": 4,
+        "onUpdate": 32,
+        "start": {
+          "tableId": "t_book_progress",
+          "columnIds": [
+            "t_book_progress__member_id",
+            "t_book_progress__book_id"
+          ]
+        },
+        "end": {
+          "tableId": "t_book_shelf",
+          "columnIds": [
+            "t_book_shelf__member_id",
+            "t_book_shelf__book_id"
+          ]
+        }
+      },
+      "fk_book_record_progress": {
+        "id": "fk_book_record_progress",
+        "relationshipType": 4,
+        "onDelete": 4,
+        "onUpdate": 32,
+        "start": {
+          "tableId": "t_book_progress",
+          "columnIds": [
+            "t_book_progress__member_id",
+            "t_book_progress__book_id"
+          ]
+        },
+        "end": {
+          "tableId": "t_book_reading_record",
+          "columnIds": [
+            "t_book_reading_record__member_id",
+            "t_book_reading_record__book_id"
+          ]
+        }
+      }
+    },
+    "indexEntities": {
+      "uq_book_edition_source": {
+        "id": "uq_book_edition_source",
+        "name": "uq_book_edition_source",
+        "tableId": "t_book_edition",
+        "indexColumnIds": [
+          "uq_book_edition_source__source",
+          "uq_book_edition_source__source_item_id"
+        ],
+        "unique": true
+      },
+      "uq_book_episode_sequence": {
+        "id": "uq_book_episode_sequence",
+        "name": "uq_book_episode_sequence",
+        "tableId": "t_book_episode",
+        "indexColumnIds": [
+          "uq_book_episode_sequence__book_id",
+          "uq_book_episode_sequence__sequence_no"
+        ],
+        "unique": true
+      },
+      "uq_book_search_history_query": {
+        "id": "uq_book_search_history_query",
+        "name": "uq_book_search_history_query",
+        "tableId": "t_book_search_history",
+        "indexColumnIds": [
+          "uq_book_search_history_query__member_id",
+          "uq_book_search_history_query__search_type",
+          "uq_book_search_history_query__query_key"
+        ],
+        "unique": true
+      },
+      "ix_book_edition_type_id": {
+        "id": "ix_book_edition_type_id",
+        "name": "ix_book_edition_type_id",
+        "tableId": "t_book_edition",
+        "indexColumnIds": [
+          "ix_book_edition_type_id__book_type",
+          "ix_book_edition_type_id__book_id"
+        ],
+        "unique": false
+      },
+      "ix_book_edition_type_isbn": {
+        "id": "ix_book_edition_type_isbn",
+        "name": "ix_book_edition_type_isbn",
+        "tableId": "t_book_edition",
+        "indexColumnIds": [
+          "ix_book_edition_type_isbn__book_type",
+          "ix_book_edition_type_isbn__isbn_key",
+          "ix_book_edition_type_isbn__book_id"
+        ],
+        "unique": false
+      },
+      "ix_book_search_history_order": {
+        "id": "ix_book_search_history_order",
+        "name": "ix_book_search_history_order",
+        "tableId": "t_book_search_history",
+        "indexColumnIds": [
+          "ix_book_search_history_order__member_id",
+          "ix_book_search_history_order__searched_at",
+          "ix_book_search_history_order__history_id"
+        ],
+        "unique": false
+      },
+      "ix_book_progress_activity": {
+        "id": "ix_book_progress_activity",
+        "name": "ix_book_progress_activity",
+        "tableId": "t_book_progress",
+        "indexColumnIds": [
+          "ix_book_progress_activity__member_id",
+          "ix_book_progress_activity__last_progress_at",
+          "ix_book_progress_activity__book_id"
+        ],
+        "unique": false
+      },
+      "ix_book_shelf_added": {
+        "id": "ix_book_shelf_added",
+        "name": "ix_book_shelf_added",
+        "tableId": "t_book_shelf",
+        "indexColumnIds": [
+          "ix_book_shelf_added__member_id",
+          "ix_book_shelf_added__added_at",
+          "ix_book_shelf_added__book_id"
+        ],
+        "unique": false
+      },
+      "ix_book_record_time": {
+        "id": "ix_book_record_time",
+        "name": "ix_book_record_time",
+        "tableId": "t_book_reading_record",
+        "indexColumnIds": [
+          "ix_book_record_time__member_id",
+          "ix_book_record_time__recorded_at",
+          "ix_book_record_time__record_id"
+        ],
+        "unique": false
+      },
+      "ix_book_record_edition": {
+        "id": "ix_book_record_edition",
+        "name": "ix_book_record_edition",
+        "tableId": "t_book_reading_record",
+        "indexColumnIds": [
+          "ix_book_record_edition__member_id",
+          "ix_book_record_edition__book_id",
+          "ix_book_record_edition__recorded_at",
+          "ix_book_record_edition__record_id"
+        ],
+        "unique": false
+      }
+    },
+    "indexColumnEntities": {
+      "uq_book_edition_source__source": {
+        "id": "uq_book_edition_source__source",
+        "indexId": "uq_book_edition_source",
+        "columnId": "t_book_edition__source",
+        "orderType": 1
+      },
+      "uq_book_edition_source__source_item_id": {
+        "id": "uq_book_edition_source__source_item_id",
+        "indexId": "uq_book_edition_source",
+        "columnId": "t_book_edition__source_item_id",
+        "orderType": 1
+      },
+      "uq_book_episode_sequence__book_id": {
+        "id": "uq_book_episode_sequence__book_id",
+        "indexId": "uq_book_episode_sequence",
+        "columnId": "t_book_episode__book_id",
+        "orderType": 1
+      },
+      "uq_book_episode_sequence__sequence_no": {
+        "id": "uq_book_episode_sequence__sequence_no",
+        "indexId": "uq_book_episode_sequence",
+        "columnId": "t_book_episode__sequence_no",
+        "orderType": 1
+      },
+      "uq_book_search_history_query__member_id": {
+        "id": "uq_book_search_history_query__member_id",
+        "indexId": "uq_book_search_history_query",
+        "columnId": "t_book_search_history__member_id",
+        "orderType": 1
+      },
+      "uq_book_search_history_query__search_type": {
+        "id": "uq_book_search_history_query__search_type",
+        "indexId": "uq_book_search_history_query",
+        "columnId": "t_book_search_history__search_type",
+        "orderType": 1
+      },
+      "uq_book_search_history_query__query_key": {
+        "id": "uq_book_search_history_query__query_key",
+        "indexId": "uq_book_search_history_query",
+        "columnId": "t_book_search_history__query_key",
+        "orderType": 1
+      },
+      "ix_book_edition_type_id__book_type": {
+        "id": "ix_book_edition_type_id__book_type",
+        "indexId": "ix_book_edition_type_id",
+        "columnId": "t_book_edition__book_type",
+        "orderType": 1
+      },
+      "ix_book_edition_type_id__book_id": {
+        "id": "ix_book_edition_type_id__book_id",
+        "indexId": "ix_book_edition_type_id",
+        "columnId": "t_book_edition__book_id",
+        "orderType": 1
+      },
+      "ix_book_edition_type_isbn__book_type": {
+        "id": "ix_book_edition_type_isbn__book_type",
+        "indexId": "ix_book_edition_type_isbn",
+        "columnId": "t_book_edition__book_type",
+        "orderType": 1
+      },
+      "ix_book_edition_type_isbn__isbn_key": {
+        "id": "ix_book_edition_type_isbn__isbn_key",
+        "indexId": "ix_book_edition_type_isbn",
+        "columnId": "t_book_edition__isbn_key",
+        "orderType": 1
+      },
+      "ix_book_edition_type_isbn__book_id": {
+        "id": "ix_book_edition_type_isbn__book_id",
+        "indexId": "ix_book_edition_type_isbn",
+        "columnId": "t_book_edition__book_id",
+        "orderType": 1
+      },
+      "ix_book_search_history_order__member_id": {
+        "id": "ix_book_search_history_order__member_id",
+        "indexId": "ix_book_search_history_order",
+        "columnId": "t_book_search_history__member_id",
+        "orderType": 1
+      },
+      "ix_book_search_history_order__searched_at": {
+        "id": "ix_book_search_history_order__searched_at",
+        "indexId": "ix_book_search_history_order",
+        "columnId": "t_book_search_history__searched_at",
+        "orderType": 1
+      },
+      "ix_book_search_history_order__history_id": {
+        "id": "ix_book_search_history_order__history_id",
+        "indexId": "ix_book_search_history_order",
+        "columnId": "t_book_search_history__history_id",
+        "orderType": 1
+      },
+      "ix_book_progress_activity__member_id": {
+        "id": "ix_book_progress_activity__member_id",
+        "indexId": "ix_book_progress_activity",
+        "columnId": "t_book_progress__member_id",
+        "orderType": 1
+      },
+      "ix_book_progress_activity__last_progress_at": {
+        "id": "ix_book_progress_activity__last_progress_at",
+        "indexId": "ix_book_progress_activity",
+        "columnId": "t_book_progress__last_progress_at",
+        "orderType": 1
+      },
+      "ix_book_progress_activity__book_id": {
+        "id": "ix_book_progress_activity__book_id",
+        "indexId": "ix_book_progress_activity",
+        "columnId": "t_book_progress__book_id",
+        "orderType": 1
+      },
+      "ix_book_shelf_added__member_id": {
+        "id": "ix_book_shelf_added__member_id",
+        "indexId": "ix_book_shelf_added",
+        "columnId": "t_book_shelf__member_id",
+        "orderType": 1
+      },
+      "ix_book_shelf_added__added_at": {
+        "id": "ix_book_shelf_added__added_at",
+        "indexId": "ix_book_shelf_added",
+        "columnId": "t_book_shelf__added_at",
+        "orderType": 1
+      },
+      "ix_book_shelf_added__book_id": {
+        "id": "ix_book_shelf_added__book_id",
+        "indexId": "ix_book_shelf_added",
+        "columnId": "t_book_shelf__book_id",
+        "orderType": 1
+      },
+      "ix_book_record_time__member_id": {
+        "id": "ix_book_record_time__member_id",
+        "indexId": "ix_book_record_time",
+        "columnId": "t_book_reading_record__member_id",
+        "orderType": 1
+      },
+      "ix_book_record_time__recorded_at": {
+        "id": "ix_book_record_time__recorded_at",
+        "indexId": "ix_book_record_time",
+        "columnId": "t_book_reading_record__recorded_at",
+        "orderType": 1
+      },
+      "ix_book_record_time__record_id": {
+        "id": "ix_book_record_time__record_id",
+        "indexId": "ix_book_record_time",
+        "columnId": "t_book_reading_record__record_id",
+        "orderType": 1
+      },
+      "ix_book_record_edition__member_id": {
+        "id": "ix_book_record_edition__member_id",
+        "indexId": "ix_book_record_edition",
+        "columnId": "t_book_reading_record__member_id",
+        "orderType": 1
+      },
+      "ix_book_record_edition__book_id": {
+        "id": "ix_book_record_edition__book_id",
+        "indexId": "ix_book_record_edition",
+        "columnId": "t_book_reading_record__book_id",
+        "orderType": 1
+      },
+      "ix_book_record_edition__recorded_at": {
+        "id": "ix_book_record_edition__recorded_at",
+        "indexId": "ix_book_record_edition",
+        "columnId": "t_book_reading_record__recorded_at",
+        "orderType": 1
+      },
+      "ix_book_record_edition__record_id": {
+        "id": "ix_book_record_edition__record_id",
+        "indexId": "ix_book_record_edition",
+        "columnId": "t_book_reading_record__record_id",
+        "orderType": 1
+      }
+    },
+    "memoEntities": {
+      "m_book": {
+        "id": "m_book",
+        "value": "NOSPO ?? ? API v2.1 ? Flyway V12\n?? ???? FK ??? ??? PK? ????.\nCHECK ??? ?? ???? ??, ?? ?? ??, ?? ??? ????.\n??? ????? ????? ???? ???? ???.",
+        "ui": {
+          "x": 60,
+          "y": 30,
+          "width": 810,
+          "height": 160,
+          "color": "#1e40af"
+        }
+      },
+      "m_shelf": {
+        "id": "m_shelf",
+        "value": "Book 2 V13\n?? ?? ?? ? ??, ?? ? ??? ?? ????.\n?? ?? ??? ??? ??? ????.",
+        "ui": {
+          "x": 60,
+          "y": 900,
+          "width": 500,
+          "height": 105,
+          "color": "#0f766e"
+        }
+      }
+    },
+    "tableGroupEntities": {}
+  }
+}

@@ -1,0 +1,208 @@
+package kr.nospo.book.persistence;
+
+import static kr.nospo.support.SqlIds.id;
+import static kr.nospo.support.SqlIds.uuid;
+
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+import kr.nospo.book.application.ShelfStore;
+import kr.nospo.book.contract.BookType;
+import kr.nospo.book.contract.DailyReading;
+import kr.nospo.book.contract.PositionContext;
+import kr.nospo.book.contract.Position;
+import kr.nospo.book.contract.PositionUnit;
+import kr.nospo.book.contract.ReadingRecord;
+import kr.nospo.book.contract.ShelfSort;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public class JdbcShelfStore implements ShelfStore {
+    private static final String OWNED = """
+            SELECT s.book_id,s.added_at,p.current_value,p.highest_value,p.last_progress_at,p.revision,b.title,
+                   e.volume_label,e.chapter_label,e.episode_label
+            FROM book_shelf s
+            JOIN member m ON m.member_id=s.member_id AND m.status='ACTIVE'
+            JOIN book_progress p ON p.member_id=s.member_id AND p.book_id=s.book_id
+            JOIN book_edition b ON b.book_id=s.book_id
+            LEFT JOIN book_episode e ON b.book_type='WEB_NOVEL' AND e.book_id=s.book_id AND e.sequence_no=p.current_value
+            WHERE s.member_id=:owner
+            """;
+
+    private final JdbcTemplate db;
+    private final NamedParameterJdbcTemplate named;
+
+    public JdbcShelfStore(JdbcTemplate db) {
+        this.db = db;
+        named = new NamedParameterJdbcTemplate(db);
+    }
+
+    @Override
+    public Optional<Progress> progress(UUID owner, UUID bookId) {
+        return db.query("""
+                SELECT current_value,highest_value,last_progress_at,revision FROM book_progress
+                WHERE member_id=? AND book_id=?
+                """, (row, n) -> readProgress(row), id(owner), id(bookId)).stream().findFirst();
+    }
+
+    @Override
+    public void insertProgress(UUID owner, UUID bookId, Progress progress) {
+        db.update("""
+                INSERT INTO book_progress(member_id,book_id,current_value,highest_value,last_progress_at,revision)
+                VALUES (?,?,?,?,?,?)
+                """, id(owner), id(bookId), progress.current(), progress.highest(), utc(progress.lastProgressAt()),
+                progress.revision());
+    }
+
+    @Override
+    public void updateProgress(UUID owner, UUID bookId, Progress progress) {
+        db.update("""
+                UPDATE book_progress SET current_value=?,highest_value=?,last_progress_at=?,revision=?
+                WHERE member_id=? AND book_id=?
+                """, progress.current(), progress.highest(), utc(progress.lastProgressAt()), progress.revision(),
+                id(owner), id(bookId));
+    }
+
+    @Override
+    public void attach(UUID owner, UUID bookId, Instant addedAt) {
+        db.update("INSERT INTO book_shelf(member_id,book_id,added_at) VALUES (?,?,?)", id(owner), id(bookId), utc(addedAt));
+    }
+
+    @Override
+    public boolean detach(UUID owner, UUID bookId) {
+        return db.update("DELETE FROM book_shelf WHERE member_id=? AND book_id=?", id(owner), id(bookId)) == 1;
+    }
+
+    @Override
+    public Optional<Entry> find(UUID owner, UUID bookId) {
+        return named.query(OWNED + " AND s.book_id=:book", new MapSqlParameterSource("owner", id(owner))
+                .addValue("book", id(bookId)), this::entry).stream().findFirst();
+    }
+
+    @Override
+    public Optional<Entry> current(UUID owner) {
+        return named.query(OWNED + """
+                 ORDER BY p.last_progress_at DESC,
+                          CASE WHEN p.last_progress_at IS NULL THEN s.added_at END DESC,
+                          s.book_id DESC LIMIT 1
+                """, new MapSqlParameterSource("owner", id(owner)), this::entry).stream().findFirst();
+    }
+
+    @Override
+    public List<Entry> list(UUID owner, BookType type, ShelfSort sort, Boundary after, int fetch) {
+        String key = switch (sort) {
+            case TITLE -> "CAST(b.title AS BINARY(2048))";
+            case RECENT_ADDED -> "s.added_at";
+            case RECENT_ACTIVITY -> "COALESCE(p.last_progress_at,s.added_at)";
+        };
+        boolean byTitle = sort == ShelfSort.TITLE;
+        String direction = byTitle ? " ASC" : " DESC";
+        String comparison = byTitle ? ">" : "<";
+        String placeholder = byTitle ? "CAST(:key AS BINARY(2048))" : ":key";
+        var args = new MapSqlParameterSource("owner", id(owner)).addValue("fetch", fetch);
+        String sql = OWNED;
+        if (type != null) {
+            sql += " AND b.book_type=:type";
+            args.addValue("type", type.name());
+        }
+        if (after != null) {
+            sql += " AND (" + key + comparison + placeholder + " OR (" + key + "=" + placeholder
+                    + " AND s.book_id" + comparison + ":book))";
+            args.addValue("key", byTitle ? after.sortKey() : utc(Instant.parse(after.sortKey())))
+                    .addValue("book", id(after.bookId()));
+        }
+        return named.query(sql + " ORDER BY " + key + direction + ",s.book_id" + direction + " LIMIT :fetch",
+                args, this::entry);
+    }
+
+    @Override
+    public UUID record(UUID owner, UUID bookId, int from, int to, int addedUnits, Instant recordedAt) {
+        UUID recordId = UUID.randomUUID();
+        db.update("""
+                INSERT INTO book_reading_record(record_id,member_id,book_id,from_value,to_value,added_units,recorded_at)
+                VALUES (?,?,?,?,?,?,?)
+                """, id(recordId), id(owner), id(bookId), from, to, addedUnits, utc(recordedAt));
+        return recordId;
+    }
+
+    @Override
+    public List<ReadingRecord> records(UUID owner, UUID bookId, Instant start, Instant end, RecordBoundary after,
+            int fetch) {
+        var args = new MapSqlParameterSource("owner", id(owner)).addValue("fetch", fetch);
+        String sql = """
+                SELECT r.record_id,r.book_id,r.from_value,r.to_value,r.added_units,r.recorded_at,b.book_type
+                FROM book_reading_record r
+                JOIN member m ON m.member_id=r.member_id AND m.status='ACTIVE'
+                JOIN book_edition b ON b.book_id=r.book_id
+                WHERE r.member_id=:owner
+                """;
+        if (bookId != null) {
+            sql += " AND r.book_id=:book";
+            args.addValue("book", id(bookId));
+        }
+        if (start != null) {
+            sql += " AND r.recorded_at>=:start";
+            args.addValue("start", utc(start));
+        }
+        if (end != null) {
+            sql += " AND r.recorded_at<:end";
+            args.addValue("end", utc(end));
+        }
+        if (after != null) {
+            sql += " AND (r.recorded_at<:afterTime OR (r.recorded_at=:afterTime AND r.record_id<:afterId))";
+            args.addValue("afterTime", utc(after.recordedAt())).addValue("afterId", id(after.recordId()));
+        }
+        return named.query(sql + " ORDER BY r.recorded_at DESC,r.record_id DESC LIMIT :fetch", args, (row, n) -> {
+            var unit = BookType.valueOf(row.getString("book_type")) == BookType.BOOK
+                    ? PositionUnit.PAGE : PositionUnit.EPISODE;
+            return new ReadingRecord(uuid(row.getBytes("record_id")), uuid(row.getBytes("book_id")),
+                    new Position(unit, row.getInt("from_value")), new Position(unit, row.getInt("to_value")),
+                    row.getInt("added_units"), instant(row, "recorded_at"));
+        });
+    }
+
+    @Override
+    public List<DailyReading> dailyTotals(UUID owner, Instant start, Instant end, int offsetSeconds) {
+        var args = new MapSqlParameterSource("owner", id(owner)).addValue("start", utc(start))
+                .addValue("end", utc(end)).addValue("offset", offsetSeconds);
+        return named.query("""
+                SELECT CAST({fn TIMESTAMPADD(SQL_TSI_SECOND, :offset, r.recorded_at)} AS DATE) AS reading_day,
+                       SUM(CASE WHEN b.book_type='BOOK' THEN r.added_units ELSE 0 END) AS pages,
+                       SUM(CASE WHEN b.book_type='WEB_NOVEL' THEN r.added_units ELSE 0 END) AS episodes
+                FROM book_reading_record r
+                JOIN member m ON m.member_id=r.member_id AND m.status='ACTIVE'
+                JOIN book_edition b ON b.book_id=r.book_id
+                WHERE r.member_id=:owner AND r.recorded_at>=:start AND r.recorded_at<:end AND r.added_units>0
+                GROUP BY reading_day
+                """, args, (row, n) -> DailyReading.of(row.getObject("reading_day", java.time.LocalDate.class),
+                        row.getLong("pages"), row.getLong("episodes")));
+    }
+
+    private Entry entry(ResultSet row, int ignored) throws SQLException {
+        return new Entry(uuid(row.getBytes("book_id")), readProgress(row),
+                new PositionContext(row.getString("volume_label"), row.getString("chapter_label"), row.getString("episode_label")),
+                instant(row, "added_at"), row.getString("title"));
+    }
+
+    private static Progress readProgress(ResultSet row) throws SQLException {
+        return new Progress(row.getInt("current_value"), row.getInt("highest_value"),
+                instant(row, "last_progress_at"), row.getLong("revision"));
+    }
+
+    private static LocalDateTime utc(Instant time) {
+        return time == null ? null : LocalDateTime.ofInstant(time, ZoneOffset.UTC);
+    }
+
+    private static Instant instant(ResultSet row, String name) throws SQLException {
+        var value = row.getObject(name, LocalDateTime.class);
+        return value == null ? null : value.toInstant(ZoneOffset.UTC);
+    }
+}

@@ -52,6 +52,9 @@ public class SecurityConfig {
             PATHS.matcher("/api/v1/admin/notices/{noticeId}")
     };
     private static final RequestMatcher[] PUBLIC_REQUESTS = {
+            PATHS.matcher(HttpMethod.GET, "/api/v1/books/search"),
+            PATHS.matcher(HttpMethod.GET, "/api/v1/books/{bookId}"),
+            PATHS.matcher(HttpMethod.GET, "/api/v1/books/{bookId}/structure"),
             PATHS.matcher(HttpMethod.GET, "/api/v1/notices"),
             PATHS.matcher(HttpMethod.GET, "/api/v1/notices/{noticeId}"),
             PATHS.matcher(HttpMethod.GET, "/api/v1/terms"),
@@ -122,6 +125,12 @@ public class SecurityConfig {
         source.registerCorsConfiguration("/api/v1/admin/notices", noticeCors);
         source.registerCorsConfiguration(AdminNoticeImageController.PATH, noticeCors);
         source.registerCorsConfiguration("/api/v1/admin/notices/{noticeId}", noticeCors);
+        var progressCors = new CorsConfiguration(cors);
+        // Copy the list before extending it so If-Match stays local to the progress endpoint.
+        progressCors.setAllowedHeaders(cors.getAllowedHeaders());
+        progressCors.addAllowedHeader("If-Match");
+        progressCors.addExposedHeader("ETag");
+        source.registerCorsConfiguration("/api/v1/me/shelf/{bookId}/progress", progressCors);
         source.registerCorsConfiguration("/api/**", cors);
         return http.cors(c -> c.configurationSource(source))
                 .addFilterBefore(new OncePerRequestFilter() {

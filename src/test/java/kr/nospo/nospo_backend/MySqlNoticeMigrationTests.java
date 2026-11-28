@@ -44,7 +44,7 @@ class MySqlNoticeMigrationTests {
         var versionTen = Flyway.configure().dataSource(source).target("10").load();
         assertThat(versionTen.migrate().migrationsExecuted).isEqualTo(1);
         assertThat(versionTen.info().current().getVersion().getVersion()).isEqualTo("10");
-        var flyway = Flyway.configure().dataSource(source).load();
+        var flyway = Flyway.configure().dataSource(source).target("11").load();
         assertThat(flyway.migrate().migrationsExecuted).isEqualTo(1);
         flyway.validate();
         assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("11");
