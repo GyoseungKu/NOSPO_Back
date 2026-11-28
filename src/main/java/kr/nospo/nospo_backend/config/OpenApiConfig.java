@@ -15,7 +15,8 @@ public class OpenApiConfig {
 
 	@Bean
 	OpenAPI nospoOpenApi() {
-		return new OpenAPI().addServersItem(new Server().url("https://nospo.syu-likelion.org").description("NOSPO HTTPS API"))
+		return new OpenAPI().addServersItem(new Server().url("/").description("현재 서버"))
+                .addServersItem(new Server().url("https://nospo.syu-likelion.org").description("NOSPO HTTPS API"))
             .components(new Components().addSecuritySchemes("bearerAuth", new SecurityScheme()
             .type(SecurityScheme.Type.HTTP).scheme("bearer").bearerFormat("JWT"))).info(new Info()
 			.title("NOSPO API")

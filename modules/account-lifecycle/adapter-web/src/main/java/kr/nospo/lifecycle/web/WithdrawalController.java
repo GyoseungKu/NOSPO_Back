@@ -6,11 +6,13 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 import kr.nospo.lifecycle.application.WithdrawalService;
+import kr.nospo.support.ApiResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
+import java.util.List;
 import java.util.UUID;
 
 @Tag(name = "회원 탈퇴", description = "재인증을 통한 회원 탈퇴")
@@ -27,6 +29,16 @@ public class WithdrawalController {
     public WithdrawalController(WithdrawalService service,@Value("${nospo.auth.secure-cookie:true}") boolean secure){
         this.service=service;this.secure=secure;
     }
+    public record WithdrawalInfo(List<String> deletes, List<String> retains, boolean recoverable) {}
+
+    @GetMapping("/withdrawal-info")
+    @Operation(summary = "회원 탈퇴 안내", description = "현재 서버의 삭제 범위와 30일 복구 가능 정책을 확인합니다.")
+    public ApiResponse<WithdrawalInfo> info() {
+        return ApiResponse.of(new WithdrawalInfo(
+                List.of("세션과 인증 증명은 탈퇴 시 무효화", "회원 정보·서재·독서 이력·AI 데이터·토큰 거래·개인 위키는 최종 파기 시 삭제"),
+                List.of("승인된 공용 위키 버전", "복구 기간 동안 복구용 자료와 복구 대상 개인 데이터"), true));
+    }
+
     @Operation(summary = "회원 탈퇴", description = "탈퇴 목적의 reauthProof와 confirmed=true를 제출합니다. Idempotency-Key에 UUID를 전달합니다. 처리 후 refreshToken 쿠키를 삭제합니다.")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "204", description = "처리 완료 (응답 본문 없음)")
     @PostMapping("/withdrawal")

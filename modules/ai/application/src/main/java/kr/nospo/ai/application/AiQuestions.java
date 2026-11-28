@@ -86,7 +86,7 @@ public class AiQuestions {
             throw new ApiException(503, "AI_UNAVAILABLE");
         UUID conversationId = conversation == null ? UUID.randomUUID() : conversation;
         if (conversation == null) {
-            store.createConversation(member, conversationId, bookId, selected, "도서 질문", now);
+            store.createConversation(member, conversationId, bookId, selected, conversationTitle(snapshot, text), now);
         } else {
             var existing = store.conversation(member, conversationId)
                     .filter(c -> bookId.equals(c.book())).orElseThrow(AiQuestions::missing);
@@ -101,6 +101,17 @@ public class AiQuestions {
                 now, null, now.plusSeconds(180), conversation, unit, value);
         store.insert(question, key);
         return question;
+    }
+
+    private static String conversationTitle(Snapshot snapshot, String question) {
+        String query = question.toLowerCase(java.util.Locale.ROOT);
+        return snapshot.entities().stream().map(Entity::name)
+                .filter(name -> name != null && !name.isBlank())
+                .filter(name -> query.contains(name.toLowerCase(java.util.Locale.ROOT)))
+                .max(java.util.Comparator.comparingInt(String::length))
+                .map(name -> name.substring(0, name.offsetByCodePoints(0, Math.min(100, name.codePointCount(0, name.length())))))
+                .map(name -> name + " 관련 질문")
+                .orElse("도서 질문");
     }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)

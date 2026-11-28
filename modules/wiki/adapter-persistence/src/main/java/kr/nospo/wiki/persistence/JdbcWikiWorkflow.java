@@ -132,6 +132,7 @@ class JdbcWikiWorkflow implements WikiWorkflowStore {
     }
 
     public void connectRevisionDraft(UUID submission, UUID draft) {
+        db.update("DELETE FROM wiki_revision_draft WHERE submission_id=?", id(submission));
         db.update("INSERT INTO wiki_revision_draft(submission_id,draft_id) VALUES (?,?)", id(submission), id(draft));
     }
 

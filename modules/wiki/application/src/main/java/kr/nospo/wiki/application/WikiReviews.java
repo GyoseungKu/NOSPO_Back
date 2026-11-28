@@ -94,7 +94,7 @@ public class WikiReviews {
         var proposed = snapshots.publish(drafts.snapshot(review.submission().snapshot()), base, draft.position());
         int current = current(draft.bookId());
         ObjectNode result = json.createObjectNode();
-        result.set("baseWikiVersion", json.valueToTree(draft.baseWikiVersion()));
+        result.set("baseVersion", json.valueToTree(draft.baseWikiVersion()));
         result.put("currentVersion", current);
         result.put("versionConflict", current != expected(draft));
         result.set("changes", json.valueToTree(snapshots.changes(base == null ? json.createObjectNode() : base, proposed)));
@@ -161,8 +161,8 @@ public class WikiReviews {
         var existingId = workflow.revisionDraft(id);
         if (existingId.isPresent()) {
             Draft existing = drafts.find(member, existingId.get());
-            if (existing.status() != DraftStatus.DRAFT) throw new ApiException(409, "DRAFT_NOT_EDITABLE");
-            return new Revision(drafts.detail(member, existing.id()), false);
+            if (existing.status() == DraftStatus.DRAFT)
+                return new Revision(drafts.detail(member, existing.id()), false);
         }
         var original = review.draft();
         var position = drafts.scope().resolve(member, original.bookId(), original.position());

@@ -27,29 +27,29 @@ class AiGraphController {
         this.graphs = graphs;
     }
 
-    record Input(UUID bookId, AiQuestionController.RequestedPosition position, UUID regenerateFromGraphId) {}
-    record Accepted(UUID jobId, Position appliedPosition, int wikiVersion, int cost, String status) {}
-    record Result(UUID graphId, UUID bookId, Position generatedPosition, int wikiVersion, Instant createdAt,
+    record GraphRequest(UUID bookId, AiQuestionController.RequestedPosition position, UUID regenerateFromGraphId) {}
+    record GraphAccepted(UUID jobId, Position appliedPosition, int wikiVersion, int cost, String status) {}
+    record GraphResult(UUID graphId, UUID bookId, Position generatedPosition, int wikiVersion, Instant createdAt,
                   Position currentPosition, boolean positionMatches, boolean regenerationRequired,
                   List<AiGraphs.Node> nodes, List<AiGraphs.Edge> edges, List<AiGraphs.Citation> citations) {}
 
     @PostMapping("/ai/graphs")
     @Operation(summary = "AI 관계도 생성·재생성", description = "현재 진도에서 공개된 위키를 고정하고 관계도 작업을 접수합니다. UUID Idempotency-Key가 필요합니다.")
     @ResponseStatus(HttpStatus.ACCEPTED)
-    public ApiResponse<Accepted> submit(@AuthenticationPrincipal Jwt jwt, @RequestHeader("Idempotency-Key") UUID key,
-            @RequestBody Input input) {
+    public ApiResponse<GraphAccepted> submit(@AuthenticationPrincipal Jwt jwt, @RequestHeader("Idempotency-Key") UUID key,
+            @RequestBody GraphRequest input) {
         var graph = graphs.submit(AiQuestionController.member(jwt), key, input.bookId(),
                 input.position() == null ? null : input.position().parse(), input.regenerateFromGraphId());
-        return ApiResponse.of(new Accepted(graph.job(), graph.position(), graph.version(), 1, graph.status()));
+        return ApiResponse.of(new GraphAccepted(graph.job(), graph.position(), graph.version(), 1, graph.status()));
     }
 
     @GetMapping("/ai/graphs/{graphId}")
     @Operation(summary = "AI 관계도 결과 조회", description = "본인 관계도의 인물·관계·출처와 재생성 필요 여부를 조회합니다.")
-    public ApiResponse<Result> result(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID graphId) {
+    public ApiResponse<GraphResult> result(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID graphId) {
         var result = graphs.result(AiQuestionController.member(jwt), graphId);
         var summary = result.summary();
         var content = result.content();
-        return ApiResponse.of(new Result(summary.graphId(), summary.bookId(), summary.generatedPosition(),
+        return ApiResponse.of(new GraphResult(summary.graphId(), summary.bookId(), summary.generatedPosition(),
                 summary.wikiVersion(), summary.createdAt(), summary.currentPosition(), summary.positionMatches(),
                 summary.regenerationRequired(), content.nodes(), content.edges(), content.citations()));
     }

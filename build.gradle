@@ -55,7 +55,7 @@ dependencies {
 
 tasks.named('test') {
 	useJUnitPlatform()
-    if (project.hasProperty('skipMysql')) { exclude '**/MySqlEmailSignupTests.class' }
+    if (project.hasProperty('skipMysql')) { exclude '**/MySql*Tests.class' }
 }
 
 configure(subprojects.findAll { it.buildFile.exists() }) {

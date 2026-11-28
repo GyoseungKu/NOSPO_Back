@@ -220,6 +220,9 @@ class WikiDraftApiTests {
         String parent = data(submission).path("submissionId").asString();
         String adminPath = "/api/v1/admin/wiki/submissions/" + parent;
         var review = mvc.perform(get(adminPath).with(member(admin))).andExpect(status().isOk()).andReturn();
+        mvc.perform(get(adminPath + "/diff").with(member(admin))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.baseVersion").hasJsonPath())
+                .andExpect(jsonPath("$.data.baseWikiVersion").doesNotHaveJsonPath());
         mvc.perform(post(adminPath + "/request-changes").with(member(admin)).header("If-Match", tag(review))
                         .header("Idempotency-Key", UUID.randomUUID()).contentType("application/json")
                         .content(json.writeValueAsString(Map.of("comment", "설명 보완"))))
@@ -230,6 +233,8 @@ class WikiDraftApiTests {
         assertThat(data(created).path("draftId")).isEqualTo(data(replay).path("draftId"));
         var resubmitted = submit(DRAFTS + "/" + data(created).path("draftId").asString(), tag(created), UUID.randomUUID());
         assertThat(data(resubmitted).path("parentSubmissionId").asString()).isEqualTo(parent);
+        var replacement = mvc.perform(post(revision).with(member(owner))).andExpect(status().isCreated()).andReturn();
+        assertThat(data(replacement).path("draftId")).isNotEqualTo(data(created).path("draftId"));
     }
 
     private MvcResult postJson(String path, UUID actor, String tag, Object body) throws Exception {

@@ -50,6 +50,7 @@ public class SecurityConfig {
             PATHS.matcher("/api/v1/admin/notices"),
             PATHS.matcher("/api/v1/admin/notices/{noticeId}")
     };
+    private static final RequestMatcher ADMIN_TERMS = PATHS.matcher("/api/v1/admin/terms/versions/**");
     private static final RequestMatcher[] ADMIN_AI = {
             PATHS.matcher("/api/v1/admin/members/{memberId}/ai/**"),
             PATHS.matcher("/api/v1/admin/ai/credit-transactions/{transactionId}/refund")
@@ -96,6 +97,7 @@ public class SecurityConfig {
             PATHS.matcher(HttpMethod.POST, "/api/v1/me/consents"),
             PATHS.matcher(HttpMethod.POST, "/api/v1/me/reauth/password"),
             PATHS.matcher(HttpMethod.POST, "/api/v1/me/reauth/kakao"),
+            PATHS.matcher(HttpMethod.GET, "/api/v1/me/withdrawal-info"),
             PATHS.matcher(HttpMethod.POST, "/api/v1/me/withdrawal")
     };
 
@@ -178,6 +180,8 @@ public class SecurityConfig {
                                         "/api/v1/wiki/drafts/**",
                                         "/api/v1/wiki/submissions/**",
                                         "/api/v1/admin/wiki/submissions/**",
+                                        "/api/v1/admin/terms/versions",
+                                        "/api/v1/admin/terms/versions/{termVersionId}/publication",
                                         "/api/v1/auth/signup",
                                         "/api/v1/auth/signup/email-verifications",
                                         "/api/v1/auth/signup/email-verifications/confirm",
@@ -198,7 +202,7 @@ public class SecurityConfig {
                                                 "/v3/api-docs.yaml")
                                         .permitAll()
                                         .requestMatchers(PUBLIC_REQUESTS).permitAll()
-                                        .requestMatchers(request -> matches(ADMIN_NOTICES, request) || matches(ADMIN_AI, request))
+                                        .requestMatchers(request -> matches(ADMIN_NOTICES, request) || matches(ADMIN_AI, request) || ADMIN_TERMS.matches(request))
                                         .access((authentication, context) -> new AuthorizationDecision(
                                                 authentication.get() instanceof JwtAuthenticationToken jwt
                                                         && jwt.isAuthenticated() && activeAdmin(members, jwt)))
@@ -226,7 +230,7 @@ public class SecurityConfig {
                                         .accessDeniedHandler(
                                                 (r, s, x) ->
                                                         error(s, mapper, 403,
-                                                                (matches(ADMIN_NOTICES, r) || matches(ADMIN_AI, r))
+                                                                (matches(ADMIN_NOTICES, r) || matches(ADMIN_AI, r) || ADMIN_TERMS.matches(r))
                                                                         ? "FORBIDDEN" : "ACCESS_DENIED")))
                 .addFilterBefore(
                         new OncePerRequestFilter() {

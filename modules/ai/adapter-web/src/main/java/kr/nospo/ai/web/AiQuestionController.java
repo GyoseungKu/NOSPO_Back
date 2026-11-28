@@ -54,7 +54,7 @@ public class AiQuestionController {
     }
 
     public record QuestionInput(UUID bookId, RequestedPosition position, String question, UUID conversationId) {}
-    public record Accepted(UUID jobId, UUID conversationId, UUID questionId, Position appliedPosition,
+    public record QuestionAccepted(UUID jobId, UUID conversationId, UUID questionId, Position appliedPosition,
                            int wikiVersion, int cost, String status, String eventsUrl) {}
     public record Failure(String code, String message) {}
     public record Job(UUID jobId, String type, String status, Instant createdAt, Instant completedAt,
@@ -71,11 +71,11 @@ public class AiQuestionController {
     @PostMapping("/ai/questions")
     @ResponseStatus(HttpStatus.ACCEPTED)
     @Operation(summary = "도서 질문 접수", description = "공개 위키 범위를 고정하고 1토큰을 예약합니다. Idempotency-Key에는 UUID를 보냅니다.")
-    public ApiResponse<Accepted> submit(@AuthenticationPrincipal Jwt jwt, @RequestHeader("Idempotency-Key") UUID key,
+    public ApiResponse<QuestionAccepted> submit(@AuthenticationPrincipal Jwt jwt, @RequestHeader("Idempotency-Key") UUID key,
             @RequestBody QuestionInput input) {
         var q = questions.submit(member(jwt), key, input.bookId(),
                 input.position() == null ? null : input.position().parse(), input.question(), input.conversationId());
-        return ApiResponse.of(new Accepted(q.job(), q.conversation(), q.id(), q.position(), q.version(), 1, q.status(),
+        return ApiResponse.of(new QuestionAccepted(q.job(), q.conversation(), q.id(), q.position(), q.version(), 1, q.status(),
                 "/api/v1/ai/questions/" + q.id() + "/events"));
     }
 

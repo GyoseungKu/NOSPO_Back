@@ -109,8 +109,8 @@ class AiCreditsAndQuestionsTests {
         UUID key = UUID.randomUUID();
         JsonNode accepted;
         try {
-            accepted = ask(reader, key, "Who is the librarian?");
-            assertThat(ask(reader, key, "Who is the librarian?").path("questionId")).isEqualTo(accepted.path("questionId"));
+            accepted = ask(reader, key, "하린은 어떤 사서인가요?");
+            assertThat(ask(reader, key, "하린은 어떤 사서인가요?").path("questionId")).isEqualTo(accepted.path("questionId"));
             mvc.perform(get(BALANCE).header(BEARER, reader.token())).andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.reserved").value(1)).andExpect(jsonPath("$.data.available").value(4));
             String path = "/api/v1/admin/members/" + reader.id() + "/ai/credit-adjustments";
@@ -141,7 +141,8 @@ class AiCreditsAndQuestionsTests {
                 .header(BEARER, reader.token())).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.items[0].role").value("ASSISTANT"));
         mvc.perform(get("/api/v1/me/ai/conversations").header(BEARER, reader.token())).andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.items[0].bookId").value(BOOK.toString()));
+                .andExpect(jsonPath("$.data.items[0].bookId").value(BOOK.toString()))
+                .andExpect(jsonPath("$.data.items[0].title").value("하린 관련 질문"));
         mvc.perform(get(BALANCE).header(BEARER, reader.token())).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.balance").value(4)).andExpect(jsonPath("$.data.reserved").value(0));
         assertThat(db.queryForObject("SELECT COUNT(*) FROM credit_operation WHERE member_id=? AND kind='USE'",

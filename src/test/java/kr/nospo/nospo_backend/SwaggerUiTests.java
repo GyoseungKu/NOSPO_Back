@@ -110,8 +110,9 @@ class SwaggerUiTests {
         mvc.perform(get("/v3/api-docs"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.info.title").value("NOSPO API"))
-                .andExpect(jsonPath("$.servers.length()").value(1))
-                .andExpect(jsonPath("$.servers[0].url").value("https://nospo.syu-likelion.org"));
+                .andExpect(jsonPath("$.servers.length()").value(2))
+                .andExpect(jsonPath("$.servers[0].url").value("/"))
+                .andExpect(jsonPath("$.servers[1].url").value("https://nospo.syu-likelion.org"));
         mvc.perform(get("/v3/api-docs/swagger-config"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.url").value("/v3/api-docs"));
@@ -121,6 +122,37 @@ class SwaggerUiTests {
     void otherRequestsStillRequireAuthentication() throws Exception {
         mvc.perform(get("/me").accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void wikiAndAiDocumentsMatchMethodsHeadersAndGraphSchemas() throws Exception {
+        var result = mvc.perform(get("/v3/api-docs")).andExpect(status().isOk()).andReturn();
+        var doc = new tools.jackson.databind.ObjectMapper().readTree(result.getResponse().getContentAsByteArray());
+        var paths = doc.path("paths");
+        var graph = paths.path("/api/v1/ai/graphs").path("post");
+        assertThat(graph.at("/requestBody/content/application~1json/schema/$ref").asString())
+                .endsWith("/GraphRequest");
+        assertThat(doc.at("/components/schemas/GraphRequest/properties").has("bookId")).isTrue();
+        assertThat(doc.at("/components/schemas/GraphRequest/properties").has("termVersionId")).isFalse();
+        assertThat(doc.at("/components/schemas/GraphAccepted/properties").has("questionId")).isFalse();
+        assertThat(graph.path("responses").has("202")).isTrue();
+
+        String root = "/api/v1/wiki/drafts";
+        var draft = paths.path(root + "/{draftId}");
+        assertThat(paths.path(root).at("/post/responses/201/headers").has("ETag")).isTrue();
+        assertThat(draft.at("/get/responses/200/headers").has("ETag")).isTrue();
+        assertThat(draft.at("/delete/responses/204").has("content")).isFalse();
+        var patch = draft.path("patch");
+        assertThat(patch.path("parameters").values().stream()
+                .anyMatch(p -> "If-Match".equals(p.path("name").asString()) && p.path("required").asBoolean())).isTrue();
+        assertThat(patch.path("responses").has("412")).isTrue();
+        assertThat(patch.path("responses").has("428")).isTrue();
+        var upload = paths.path(root + "/{draftId}/assets").path("post");
+        assertThat(upload.at("/requestBody/content/multipart~1form-data/schema/properties/file/format").asString())
+                .isEqualTo("binary");
+        assertThat(paths.path("/api/v1/wiki/submissions/{submissionId}/revision-drafts").path("post")
+                .path("responses").propertyNames()).contains("200", "201");
+        assertThat(paths.path("/api/v1/admin/terms/versions").path("post").path("responses").has("201")).isTrue();
     }
 
     @Test

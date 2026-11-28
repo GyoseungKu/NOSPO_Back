@@ -1,163 +1,82 @@
-# NOSPO_Back
-NOSPO Web/App Back-End Project
+# NOSPO Back-End
+
+NOSPO의 Spring Boot API 서버입니다. 이메일·카카오 계정과 약관, 도서 검색·서재·독서 기록, 판본별 Wiki, AI 질문·관계도·토큰, 공지사항을 제공합니다.
+
+- [기능·API 명세 v2.1](docs/NOSPO_Function_API_v2.1.md)
+- [API 요약표](docs/NOSPO_API_Summary.xlsx)
+- [모듈 구조](docs/NOSPO_Multi_Module_Study_Guide.md)
+
+## 로컬 실행
+
+Java 21과 MySQL 8.4가 필요합니다. MySQL에 로컬용 빈 데이터베이스를 만들고, 아래 변수를 프로젝트 루트의 Git 제외 파일 `env.properties` 또는 OS 환경변수로 설정합니다. `env.properties`에는 `KEY=value` 형식을 사용합니다.
+
+| 설정 | 용도 |
+| --- | --- |
+| `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` | MySQL 접속. 예시 URL은 `jdbc:mysql://localhost:3306/nospo?connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true` |
+| `AUTH_ENCRYPTION_KEY`, `AUTH_HMAC_KEY`, `AUTH_JWT_KEY` | 각각 별도로 생성한 32바이트 난수의 Base64 값. 재시작 후에도 같은 키를 사용 |
+| `AUTH_ALLOWED_ORIGINS` | 실제 프론트 Origin을 쉼표로 구분. 로컬 예시는 `http://localhost:3000` |
+| `AUTH_EMAIL_CONFIRM_URL` | 이메일 인증용 프론트 페이지. query·fragment 없이 설정 |
+| `AUTH_SECURE_COOKIE` | HTTPS는 `true`. 로컬 HTTP에 한해 `false` |
+| `KAKAO_REDIRECT_URI`, `KAKAO_FRONTEND_CALLBACK`, `KAKAO_RETURN_PATHS` | 백엔드 `/api/v1/auth/kakao/callback`의 전체 URL, 프론트 콜백 URL, 쉼표로 구분한 허용 상대 경로. 로컬 HTTP 콜백은 루프백 주소와 `AUTH_SECURE_COOKIE=false` 필요 |
+| `KAKAO_CLIENT_ID`, `KAKAO_CLIENT_SECRET` | 카카오 로그인에 사용하는 REST API 키와 Secret. 책 검색은 동일 REST API 키 사용 |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `MAIL_FROM` | 메일 전송 설정. 로컬 메일 서버를 쓴다면 호스트와 포트를 직접 지정 |
+| `SMTP_AUTH`, `SMTP_STARTTLS`, `SMTP_STARTTLS_REQUIRED`, `MAIL_WORKER_ENABLED` | SMTP 인증·TLS와 메일 발송 워커 설정 |
+| `OPENAI_API_KEY`, `OPENAI_MODEL` | 실제 AI 질문에 사용. 모델 기본값은 `gpt-5-mini`. Wiki와 관계도에는 모델 키가 필요 없음 |
+
+키 생성 예시입니다. 각 키에 대해 별도로 실행합니다.
+
+```sh
+openssl rand -base64 32
+sh gradlew bootRun
+```
+
+Windows에서는 `gradlew.bat bootRun`을 사용합니다. 기본 포트는 8080입니다. Flyway가 스키마를 적용합니다. 번호는 **Book V12·V13 → Wiki V14 → AI V15·V16 → Wiki 검수 V17 → Book 참조 V18 → 관리자 약관 감사 V19** 순서입니다. 공유 DB에 적용된 기존 Flyway 이력은 병합본을 실행하기 전에 확인하세요.
+
+첫 가입 전에 관리자 약관 API나 운영용 초기 마이그레이션을 통해 승인된 **필수 SERVICE·PRIVACY 약관**을 발행해야 합니다. 관리자 API는 이미 활성화된 관리자 계정이 필요합니다. 현행 약관이 없으면 가입은 `503 TERMS_NOT_CONFIGURED`를 반환합니다.
 
 ## API 문서
 
-애플리케이션 실행 후 다음 주소에서 확인할 수 있습니다(기본 포트 8080).
+- [Swagger UI](http://localhost:8080/swagger-ui.html)에서 로컬 서버를 열고 **Authorize**에 액세스 토큰을 입력합니다.
+- [OpenAPI JSON](http://localhost:8080/v3/api-docs)을 도구에 가져올 수 있습니다.
+- API 기본 경로는 `/api/v1`입니다. 본인·관리자 요청은 `Authorization: Bearer <accessToken>`을 사용합니다.
 
-- Swagger UI: http://localhost:8080/swagger-ui.html
-- OpenAPI JSON: http://localhost:8080/v3/api-docs
+## 주요 흐름
 
-문서·약관·가입 API는 인증 없이 접근 가능합니다. `/api/v1/me`는 가입 후 받은 Bearer JWT로 호출합니다.
-Swagger에는 구현된 컨트롤러만 표시됩니다.
-
-## AI 도서 질문과 토큰
-
-이메일·카카오 가입 시 기존과 동일하게 5토큰을 한 번 지급합니다. 사용자는 잔액을 조회하고, 관리자는 회원에게 토큰을 지급하거나 사용 가능한 잔액 한도에서 회수할 수 있습니다. 관계도, 위키 기여 보상, 관리자 환불과 원장 목록 조회는 후속 범위입니다.
-
-| API | 권한 | 동작 |
-| --- | --- | --- |
-| `GET /api/v1/ai/credit-policy` | 공개 | 명세에 정의된 가입 지급량과 AI 비용 정책 |
-| `GET /api/v1/me/ai/credits` | 본인 | `balance`, `reserved`, `available` |
-| `GET /api/v1/admin/members/{memberId}/ai/credits` | 관리자 | 활성 회원의 잔액 |
-| `POST /api/v1/admin/members/{memberId}/ai/credit-adjustments` | 관리자 | `201` 거래 반환. 예시 `{"type":"GRANT","amount":3,"reason":"지급 사유"}`. 회수는 `RECOVERY` |
-| `POST /api/v1/ai/questions` | 본인 | `202` 접수. 작업·질문·대화 ID와 스트림 URL 반환 |
-| `GET /api/v1/ai/jobs/{jobId}` | 본인 | 대기·처리·성공·실패 상태와 청구 토큰 수 |
-| `GET /api/v1/ai/questions/{questionId}` | 본인 | 완료 답변·출처 또는 실패 상태 |
-| `GET /api/v1/ai/questions/{questionId}/events` | 본인 | SSE `started`, `delta`, `completed`, `failed` |
-| `GET /api/v1/me/ai/conversations` | 본인 | 대화 목록. `bookId`, `cursor`, `limit` 선택 |
-| `GET /api/v1/ai/conversations/{conversationId}` | 본인 | 대화 상세 |
-| `GET /api/v1/ai/conversations/{conversationId}/messages` | 본인 | 메시지 이력. `cursor`, `limit` 선택 |
-
-두 POST에는 Bearer JWT와 UUID `Idempotency-Key`가 필요합니다. 같은 키·같은 요청은 24시간 안에 기존 작업이나 거래를 반환하며, 값이 다르면 `409 IDEMPOTENCY_CONFLICT`입니다. 관리자는 서버에 저장된 현재 `ADMIN` 역할과 필수 약관 준수 상태로 판정합니다. 조정에는 처리자·사유·시각을 남깁니다. 잔액 5개 중 1개가 질문에 예약돼 있다면 회수 최대치는 4개입니다.
-
-### 로컬에서 OpenAI 연결
-
-기본 실행에는 실서재·위키 어댑터가 없으므로 질문 접수는 `503 AI_UNAVAILABLE`로 응답합니다. 잔액 및 관리자 조정은 일반 실행에서도 사용할 수 있습니다.
-
-1. IntelliJ 실행 설정 또는 셸에 `OPENAI_API_KEY`를 등록합니다. 선택적으로 `OPENAI_MODEL`을 지정할 수 있으며 기본값은 `gpt-5-mini`입니다.
-2. 일반 실행 설정에 `ai-local` 프로필을 추가합니다. Windows에서 명령으로 실행할 때는 `.\gradlew.bat bootRun --args="--spring.profiles.active=ai-local"`을 사용합니다. 이 프로필은 로컬 DB 전용입니다.
-3. 로그인한 회원의 JWT로 아래 요청을 `POST /api/v1/ai/questions`에 보냅니다. 샘플 도서의 현재 진도는 40화이며, 10화부터 공개되는 근거가 하나 있습니다. `position`을 생략하면 현재 진도를 사용합니다. 후속 질문에는 앞서 받은 `conversationId`를 넣습니다.
-
-```json
-{
-  "bookId": "00000000-0000-0000-0000-000000000101",
-  "position": { "unit": "EPISODE", "value": 10 },
-  "question": "별빛 도서관의 지도 보관소를 누가 열었어?"
-}
-```
-
-응답의 `eventsUrl`을 Bearer 헤더를 넣은 `fetch` 스트림으로 엽니다. 끊기면 마지막 이벤트의 `id`를 `Last-Event-ID` 헤더로 보냅니다. 완료 후 24시간이 지나 재생이 만료되면 질문 결과 API에서 복원할 수 있습니다. 질문 접수 시 1토큰을 예약하고, 답변 저장이 성공하면 차감합니다. 생성 실패 또는 접수 후 180초 초과 시 예약을 해제합니다. SSE 연결 종료는 작업을 취소하지 않습니다.
-
-OpenAI 키는 서버가 읽으며 Git이나 프런트엔드에 넣지 않습니다. 서버는 OpenAI Chat Completions에 승인 공개 범위의 스냅샷, 해당 범위와 같은 위키 버전의 최근 대화, 질문을 보냅니다. 실제 키를 설정한 로컬 실행에서도 OpenAI API 비용이 발생할 수 있습니다. [OpenAI 스트리밍 문서](https://developers.openai.com/api/reference/resources/chat/subresources/completions/streaming-events)
-
-### 실제 서재·위키 연동
-
-`AiBookContext` 구현체에 판본 ID·진도 단위·총 분량, 회원의 서재 등록과 현재 진도, 해당 지점의 승인 공개 스냅샷을 연결합니다. 스냅샷은 위키 버전, 인물·단체, 세부 항목, 양 끝이 공개된 유효 관계를 제공하며, AI는 질문 접수 시 입력을 고정합니다. 결과와 스트림은 현재 서재·진도를 다시 확인합니다. 관계도를 추가할 때 스냅샷의 인물·단체 ID와 관계 ID를 노드·엣지의 근거로 사용할 수 있습니다.
-
-Flyway `V12__ai_credits.sql`은 기존 가입 원장과 지갑을 유지하면서 관리자 조정·AI 사용 거래, 대화·질문·스트림을 추가합니다. 기존 계정 복구 정책에 따라 완료 대화와 개인 토큰 거래는 복구 기간 동안 보존되고 최종 계정 파기 시 DB에서 함께 삭제됩니다. 탈퇴 전에 접수된 작업은 기존 회원 상태와 탈퇴 세대를 검증하여 이후 응답 저장이나 차감이 이루어지지 않게 처리합니다.
-
-## 이메일 회원가입
-
-이메일 회원가입·로그인·Refresh 회전·로그아웃·비밀번호 재설정을 제공합니다. 가입과 로그인 시 Access JWT(15분)와 Refresh 쿠키(14일 세션)를 발급합니다. 상세 계약과 제한은 [Auth API 구현 문서](docs/Auth_API_Implementation.md)를 참고하세요. 닉네임·연락처·프로필·이메일·비밀번호 변경과 비밀번호 재인증도 구현했습니다. [내 정보 변경 문서](docs/Member_Profile_API_Implementation.md)를 참고하세요. 카카오 가입과 탈퇴·복구 흐름도 사용할 수 있습니다. 자세한 복구 조건은 [계정 복구 문서](docs/Recovery_API_Implementation.md)에 있습니다.
-
-| 순서 | API | 동작 |
-| --- | --- | --- |
-| 1 | `GET /api/v1/terms` | 현재 시행 중인 가입 약관 조회 |
-| 2 | `GET /api/v1/auth/availability/nickname?nickname=...` | 닉네임 중복 확인 |
-| 3 | `GET /api/v1/auth/availability/email?email=...` | 이메일 중복 확인 |
-| 4 | `POST /api/v1/auth/signup/email-verifications` | `{ "email": "reader@example.com" }`, 202 발송 작업 접수 |
-| 5 | `POST /api/v1/auth/signup/email-verifications/confirm` | `{ "token": "메일 링크의 토큰" }`, emailProof 발급 |
-| 6 | `POST /api/v1/auth/signup` | 아래 요청, `Idempotency-Key` UUID 필수 |
-| 7 | `GET /api/v1/me` | `Authorization: Bearer {accessToken}`으로 가입 결과 확인 |
-
-```json
-{
-  "nickname": "책읽는새",
-  "emailProof": "검증 API에서 받은 증명",
-  "password": "사용자가 입력한 비밀번호",
-  "phoneNumber": "010-1234-5678",
-  "consents": [
-    { "termVersionId": "약관 조회에서 받은 UUID", "agreed": true }
-  ]
-}
-```
-
-`consents`에는 조회한 현행 약관 전체의 동의/미동의를 명시합니다. 필수 약관은 true여야 합니다. 회원·동의·5토큰·증명 소비·세션·멱등 성공 결과는 같은 트랜잭션으로 저장하며, 충돌하면 모두 롤백합니다. 같은 키·같은 요청을 재시도하면 최초 결과를 반환합니다.
-
-인증 메일 링크는 `AUTH_EMAIL_CONFIRM_URL#token=...` 형태입니다. 프론트는 fragment의 토큰을 읽어 검증 API에 POST한 뒤 주소에서 제거해야 합니다. 링크 GET만으로 검증하지 않습니다. 링크/가입 증명은 각각 발급 후 10분, 재발송 간격은 60초입니다. 재클릭은 `409 CHALLENGE_ALREADY_VERIFIED`이며 기존 증명은 유지합니다.
-
-메일은 DB outbox에 암호화 저장하고 워커가 전송합니다. 제공자 접수는 ACCEPTED로 기록하며 받은편지함 도착을 뜻하지 않습니다. 최대 5회, 인증 만료 안에서 같은 링크로 재시도합니다. 접수 확인·최종 실패·취소 시 발송 암호문을 지우고, 만료 자료는 주기적으로 정리합니다. 가입 전 요청 제한은 이메일당 시간당 5회, IP당 시간당 30회입니다. 카운터는 TTL이 있는 DB 테이블에 저장합니다. 사용자 입력 `X-Forwarded-For`는 신뢰하지 않습니다. 프록시 배포 시 신뢰할 수 있는 프록시에서만 클라이언트 IP를 복원해야 합니다.
-
-## 실행 설정
-
-Java 21, MySQL 8.4 기준입니다. IntelliJ 실행 설정 또는 OS 환경변수에 다음 값을 지정하고 `./gradlew bootRun`을 실행합니다. `.env` 파일은 자동으로 읽지 않습니다.
-
-| 환경변수 | 의미 |
+| 기능 | API 사용 순서 |
 | --- | --- |
-| `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` | MySQL JDBC URL·계정. URL에 UTC 연결 설정 권장 |
-| `AUTH_ENCRYPTION_KEY` | 메일/멱등 응답 암호화용 32바이트 Base64 키 |
-| `AUTH_HMAC_KEY` | 요청 지문·제한 카운터용 별도의 32바이트 Base64 키 |
-| `AUTH_JWT_KEY` | JWT 서명용 별도의 32바이트 Base64 키 |
-| `AUTH_ALLOWED_ORIGINS` | 허용 Origin을 쉼표로 구분. 기본 localhost:3000·localhost:8080 |
-| `AUTH_EMAIL_CONFIRM_URL` | 프론트 인증 확인 페이지 URL, query·fragment 없이 설정 |
-| `AUTH_SECURE_COOKIE` | 기본 true. 로컬 HTTP 테스트에서만 false 사용 가능 |
-| `SMTP_HOST`, `SMTP_PORT` | SMTP 호스트·포트. 로컬 기본 localhost:1025 |
-| `SMTP_USERNAME`, `SMTP_PASSWORD` | SMTP 인증 정보 |
-| `SMTP_AUTH`, `SMTP_STARTTLS` | SMTP 인증/TLS 활성화 여부, 기본 false |
-| `MAIL_FROM` | 실제 발신 주소 |
+| 가입·로그인 | `GET /terms` → 이메일 인증 발송·링크 확인 → `POST /auth/signup`. 가입과 로그인은 Access JWT와 Refresh 쿠키를 발급합니다. [인증 계약](docs/Auth_API_Implementation.md) |
+| 약관 관리 | `POST /admin/terms/versions`로 버전 초안을 저장한 뒤 `PUT /admin/terms/versions/{termVersionId}/publication`에서 시행일과 재동의 여부를 지정합니다. 시행 전에는 관리자에게만 보입니다. |
+| Book·서재 | `GET /books/search` → `POST /me/shelf` → 응답의 영구 `data.book.bookId`로 교체. 진도 변경에 GET 응답의 `ETag`를 `If-Match`로 보냅니다. [Book 개발 문서](docs/NOSPO_Book_Development.md) |
+| Wiki | 같은 도서를 서재에 등록 → `POST /wiki/drafts` → 인물·단체·프로필·항목·관계·이미지 편집 → 제출 → 관리자 승인. 공개 위키는 현재 독서 진도 범위로 조회합니다. |
+| AI 질문 | `POST /ai/questions` → 응답의 `eventsUrl`로 SSE 연결 → `GET /ai/jobs/{jobId}` 또는 질문 결과 조회. 재연결은 마지막 이벤트 ID를 `Last-Event-ID`로 보냅니다. |
+| AI 관계도 | `POST /ai/graphs` → `GET /ai/jobs/{jobId}` → 응답의 `result.graphId`로 `GET /ai/graphs/{graphId}`. 재생성은 이전 관계도 ID를 지정합니다. |
+| 토큰 | 가입 5개 지급. 질문·관계도는 1개 예약, 성공 시 차감, 실패 시 해제합니다. 회원 거래 목록·상세, 관리자 지급·회수·전액 환불, 위키 승인 보상을 지원합니다. [AI·토큰 상세](docs/AI_Credit_API_Implementation.md) |
+| 탈퇴 | `GET /me/withdrawal-info`에서 현재 서버 정책을 확인합니다. 현재는 탈퇴 후 30일 복구 정책을 사용하며, 이 부분은 v2.1의 복구 없는 삭제 정책과 차이가 있습니다. [탈퇴 구현](docs/Withdrawal_API_Implementation.md) · [계정 복구](docs/Recovery_API_Implementation.md) |
+| 공지 | 공개 목록·상세와 관리자 등록·수정·삭제·이미지 업로드를 제공합니다. [공지 API 및 프론트 연동](docs/NOSPO_Notice_Development.md) |
 
-인증 키는 안전한 난수 생성기로 각각 생성하고 재시작 후에도 같은 값을 사용해야 대기 메일·멱등 응답을 복원할 수 있습니다. 테스트 키를 운영에 사용하지 않습니다. 필수 인증 키를 지정하지 않으면 서버가 시작되지 않습니다.
+Wiki 편집 시 마지막 응답의 `ETag`를 다음 `If-Match`에 사용합니다. 이미지 업로드는 multipart 필드 `file`로 요청하고, 반환된 `assetId`를 프로필의 `imageAssetId`에 저장합니다. 검수 제출·결정, AI 생성, 토큰 조정·환불에는 UUID `Idempotency-Key`를 전달합니다. 첫 Wiki 승인 예시는 `{"rewardAmount":0,"rewardReason":"공개 범위 검수 완료","expectedWikiVersion":0}`입니다.
 
-Flyway가 테이블을 생성합니다. 실제 약관 본문은 포함하지 않았으므로 승인된 SERVICE·PRIVACY 약관을 `term`, `term_version`에 별도 마이그레이션으로 등록해야 합니다. `PUBLISHED`, 시행 시각, required=true가 필요합니다. 약관이 준비되지 않으면 가입은 `503 TERMS_NOT_CONFIGURED`로 거부됩니다. 약관 발행 시에는 대상 `term` 행을 잠그고 신규 버전을 저장해야 가입의 최종 약관 검증과 직렬화됩니다.
+### AI 로컬 샘플
 
-회원가입에 필요한 업무별 contract/application/adapter 모듈을 분리했습니다. 외부 업무는 contract로 호출하며, DB 어댑터는 잠금·원자 갱신이 명시적인 JDBC를 사용합니다. 구현된 스키마는 `src/main/resources/db/migration`이 기준이며, ERD의 카카오·탈퇴 작업 테이블은 해당 기능 구현 시 별도 마이그레이션으로 추가합니다. `auth_guard`, `auth_rate_limit`은 경합·TTL 제한을 위한 기술 테이블이며 credit 지갑/가입 원장은 별도 업무 테이블입니다.
-
-## 검증
-
-- DB/Docker 없는 빠른 검증: `./gradlew :test --tests '*EmailSignupTests' --tests '*SwaggerUiTests' --tests '*NospoBackendApplicationTests' -PskipMysql`
-- 실제 MySQL 검증: Docker 실행 후 `./gradlew :test --tests '*MySqlEmailSignupTests'`
-- AI·토큰 검증: `./gradlew :test --tests '*AiCreditsAndQuestionsTests'`. 테스트 자체의 모의 OpenAI HTTP 서버를 사용합니다.
-- 전체 검증: `./gradlew test bootJar`
-
-MySQL 테스트는 Docker가 없으면 건너뜁니다. 테스트 메일은 대체 발송기로 검증하며 실제 SMTP 수신함 도착을 검증하지 않습니다.
-
-## 도서 Wiki
-
-Wiki는 Book의 영구 판본 ID(`book_edition.book_id`)를 사용합니다. 독자는 로그인 후 해당 판본을 서재에 등록해야 합니다. 조회 지점을 생략하면 현재 진도를 사용하며, 일반 도서는 `PAGE`, 웹소설은 `EPISODE`입니다. 과거 지점을 조회하면 그때까지 공개된 프로필·세부 항목·관계·이미지만 표시합니다.
-
-### 실행과 병합
-
-- 이 브랜치에서는 Wiki 모듈을 독립적으로 빌드하고, 테스트에서 Book 조회를 대체합니다. 실제 초안 작성과 공개 조회는 `feat/reading`의 Book 모듈이 포함된 병합본에서 실행합니다.
-- Book이 포함되면 `ReadingWikiBookAccess`가 `BookCatalog.find`와 `ReadingProgressCatalog.activeProgress`를 사용합니다. AI가 포함되면 승인 Wiki 조회가 질문·관계도에 연결되고 양수 보상을 토큰 원장에서 볼 수 있습니다. 샘플용 `ai-local` 프로필은 자체 데이터를 사용하므로 실제 도서 연동 확인 때는 해제합니다.
-- 새 테스트 DB의 적용 순서는 Book V12·V13, Wiki V14, AI V15·V16, Wiki 검수·이미지 V17, Book 외래 키 V18입니다. V18은 Book 모듈을 포함해 빌드할 때 등록됩니다. 기존 DB는 적용된 Flyway 버전과 파일을 확인한 뒤 병합본을 실행합니다.
-- Wiki 편집·검수와 관계도는 GPT 키 없이 동작합니다. 실제 GPT 질문을 사용하려면 AI 설정에 `OPENAI_API_KEY`를 주입합니다.
-
-### API 사용 흐름
-
-모든 경로는 `/api/v1` 기준이며 Bearer Access 토큰이 필요합니다.
-
-| 순서 | 요청 | 확인할 결과 |
-| --- | --- | --- |
-| 초안 만들기 | `POST /wiki/drafts`에 `bookId`, `mode`, `position` 전달. 수정이면 `wikiId`, `baseWikiVersion` 추가 | `201`, `draftId`, `ETag` |
-| 편집하기 | `/wiki/drafts/{draftId}` 아래의 `characters`, `organizations`, `profiles`, `entries`, `relations`, `assets` 편집 | 마지막 응답의 `ETag`를 다음 `If-Match`에 사용 |
-| 제출하기 | `POST /wiki/drafts/{draftId}/submissions`에 `If-Match`와 UUID `Idempotency-Key` 전달 | `201 PENDING`, 제출 스냅샷 고정 |
-| 관리자 검수 | `GET /admin/wiki/submissions/{submissionId}`로 검수 `ETag` 확인 후 `POST /admin/wiki/submissions/{submissionId}/approve` | `200 APPROVED`, 새 공개 버전 생성 |
-| 읽기 | `GET /books/{bookId}/wiki` 및 하위 `characters`, `organizations`, `relations` | 현재 진도 범위의 승인 내용과 Wiki 버전 |
-| 수정 요청·재제출 | 관리자 `request-changes` 후 작성자가 `POST /wiki/submissions/{submissionId}/revision-drafts` | 수정 초안 생성 또는 기존 초안 재사용. 충돌 항목 편집 후 새 제출 생성 |
-
-첫 승인 요청 예시는 `{"rewardAmount":0,"rewardReason":"공개 범위 검수 완료","expectedWikiVersion":0}`입니다. 승인·수정 요청·반려에는 `If-Match`와 UUID `Idempotency-Key`를 전달합니다. 변경 시 `If-Match` 누락은 `428`, 버전 불일치는 `412`입니다. 이미 편집한 다른 검수 건이 먼저 승인되었으면 `409 WIKI_VERSION_CONFLICT`가 반환됩니다. 관리자 지정 양수 보상은 승인·공개 버전·원장과 같은 트랜잭션에서 처리합니다.
-
-이미지는 `POST /wiki/drafts/{draftId}/assets`에 multipart `file`과 초안 `If-Match`를 전달합니다. 반환된 `assetId`를 프로필의 `imageAssetId`에 넣고 업로드 응답의 새 `ETag`로 저장합니다. 서버는 JPEG·PNG·WebP 정지 이미지의 실제 형식, 최대 5 MiB, 최대 4,096px를 검사하고 메타데이터를 제거해 PNG로 저장합니다. 이미지는 Bearer 헤더로 `GET /wiki/assets/{assetId}`를 호출해 받습니다.
-
-전체 요청·응답 계약은 [기능 및 API 명세 §8–11, §14.1](docs/NOSPO_Function_API_v2.1.md)과 [API 요약표](docs/NOSPO_API_Summary.xlsx)를 참고합니다.
-
-### 테스트
+실제 데이터로 검증할 때는 기본 프로필에서 Book의 영구 판본, 독서 진도와 승인 Wiki를 사용합니다. 샘플만 실행할 때는 로컬 DB에서 `ai-local` 프로필을 사용합니다.
 
 ```sh
-sh gradlew test --tests '*Wiki*Tests'
+sh gradlew bootRun --args='--spring.profiles.active=ai-local'
 ```
 
-Book·Wiki·AI를 함께 체크아웃하면 실제 Book 저장소와 AI 작업 큐, 위키 보상 원장을 연결하는 통합 테스트도 실행됩니다. 질문은 테스트용 HTTP 응답을 사용합니다. Docker가 실행 중이면 동일 시나리오를 MySQL 8.4 Testcontainers에서도 실행합니다.
+샘플 도서 ID는 `00000000-0000-0000-0000-000000000101`이고 현재 진도는 40화입니다. `POST /api/v1/ai/questions`에 `{"bookId":"00000000-0000-0000-0000-000000000101","position":{"unit":"EPISODE","value":10},"question":"하린은 누구인가요?"}`를 보낼 수 있습니다. 실제 키를 사용하면 외부 API 호출 비용이 발생할 수 있습니다.
 
-Docker 대신 별도의 빈 MySQL 테스트 DB를 사용할 때는 `NOSPO_WIKI_TEST_MYSQL_URL`, `NOSPO_WIKI_TEST_MYSQL_USER`, `NOSPO_WIKI_TEST_MYSQL_PASSWORD`를 설정한 뒤 `sh gradlew test --tests 'kr.nospo.nospo_backend.wiki.WikiBookAiIntegrationTests'`를 실행합니다. 테스트는 Flyway 마이그레이션을 적용하고 테스트 회원과 도서를 삽입합니다.
+## 테스트
+
+```sh
+# Docker 없이 전체 회귀
+sh gradlew test -PskipMysql
+
+# Docker를 실행한 뒤 MySQL Testcontainers까지 포함
+sh gradlew test bootJar
+
+# Swagger와 주요 API 선별 검증
+sh gradlew :test --tests '*SwaggerUiTests' --tests '*AdminTermsApiTests' --tests '*WikiDraftApiTests' --tests '*AiCreditsAndQuestionsTests'
+```
+
+별도의 빈 MySQL에서 Book·Wiki·AI 통합을 검증하려면 `NOSPO_WIKI_TEST_MYSQL_URL`, `NOSPO_WIKI_TEST_MYSQL_USER`, `NOSPO_WIKI_TEST_MYSQL_PASSWORD`를 설정하고 `sh gradlew :test --tests 'kr.nospo.nospo_backend.wiki.WikiBookAiIntegrationTests'`를 실행합니다. 이 테스트는 마이그레이션을 적용하고 테스트 데이터를 씁니다. 질문과 메일 테스트는 대체 응답을 사용합니다.
